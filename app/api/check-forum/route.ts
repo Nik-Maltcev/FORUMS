@@ -472,81 +472,56 @@ function analyzeHtml(html: string): ForumCheck {
   ]
   const hasLastDates = datePatterns.some((p) => p.test(html))
 
-  // Extract dates from "Last post" / "Последнее сообщение" sections
+  // ── LANGUAGE-AGNOSTIC freshness detection ──
+  // Instead of 52+ language-specific patterns, we detect post dates structurally:
+  // A year (202X) is a POST date when it appears near a time (HH:MM) — this
+  // combination is almost always a timestamp, not a counter or page header.
+  
   let lastDateFound: string | undefined
   let latestYear: number | undefined
   let isDateFresh = false
-  
   const currentYear = new Date().getFullYear()
   
-  // ── LANGUAGE-AGNOSTIC approach ──
-  // Instead of maintaining 52+ language-specific "last post" translations,
-  // we use structural/CSS clues and date+time co-occurrence to find post dates.
+  const postYears: number[] = []
   
-  // Strategy 1: CSS class-based — look for year inside elements whose class
-  // contains "last", "latest", "recent", or common forum engine class names
-  const cssLastPostPatterns = [
-    /class="[^"]*(?:last[-_]?post|lastpost|latest|recent|newest)[^"]*"[^>]*>[\s\S]{0,500}?(202[0-9])/gi,
-    // phpBB, vBulletin, XenForo, IPB, SMF common patterns
-    /class="[^"]*(?:lastsubject|last_post|latestThreadTitle|ipsDataItem_lastPoster|smalltext)[^"]*"[\s\S]{0,500}?(202[0-9])/gi,
+  // Strategy 1: Find year + time co-occurrence in the same text block.
+  // A "text block" is content between HTML tags. We split by tags and look
+  // for blocks that contain both a year and a time pattern.
+  // This catches: "Вторник, 17 марта 2026 г., 13:02"
+  //               "Mer 27 Awst 2025 3:23 pm"
+  //               "الثلاثاء 17 مارس 2026 12:32 pm"
+  const textBlocks = html.split(/<[^>]+>/)
+  for (const block of textBlocks) {
+    const trimmed = block.trim()
+    if (!trimmed || trimmed.length > 500) continue
+    const yearMatch = trimmed.match(/\b(202[0-9])\b/)
+    const timeMatch = trimmed.match(/\d{1,2}:\d{2}/)
+    if (yearMatch && timeMatch) {
+      postYears.push(parseInt(yearMatch[1], 10))
+    }
+  }
+  
+  // Strategy 2: CSS class-based — year inside elements with "last post" classes
+  const cssPatterns = [
+    /class="[^"]*(?:last[-_]?post|lastpost|latest|recent|newest)[^"]*"[^>]*>[\s\S]{0,500}?\b(202[0-9])\b/gi,
+    /class="[^"]*(?:lastsubject|last_post|latestThreadTitle|ipsDataItem_lastPoster|smalltext)[^"]*"[\s\S]{0,500}?\b(202[0-9])\b/gi,
   ]
-  
-  // Strategy 2: Table-row co-occurrence — a year 202X appearing near a time
-  // pattern (HH:MM) within the same table row or small HTML block is very
-  // likely a post timestamp, not a page header or copyright.
-  // Match: "202X" within 200 chars of "HH:MM" inside a <tr> or short block
-  const dateTimeCoPattern = /<tr[\s\S]{0,2000}?<\/tr>/gi
-  
-  // Strategy 3: Multilingual "last post" header keywords (kept as a bonus,
-  // but now much shorter — just the most common languages)
-  const lastPostKeywordPatterns = [
-    /last\s*(?:post|message|reply|activity)[^<]{0,200}(202[0-9])/gi,
-    /latest\s*(?:post|message|reply)[^<]{0,200}(202[0-9])/gi,
-    /последн[а-яё]*\s*(?:сообщени|пост|ответ|активност|комментари)[^<]{0,200}(202[0-9])/gi,
-    /letzt(?:er|e|es)?\s*(?:beitrag|nachricht)[^<]{0,200}(202[0-9])/gi,
-    /dernier\s*(?:message|post)[^<]{0,200}(202[0-9])/gi,
-    /últim[oa]?\s*(?:mensaje|post|mensagem)[^<]{0,200}(202[0-9])/gi,
-  ]
-  
-  let postYears: number[] = []
-  
-  // Run Strategy 1: CSS-based
-  for (const pattern of cssLastPostPatterns) {
+  for (const pattern of cssPatterns) {
     for (const match of html.matchAll(pattern)) {
-      const y = match[0].match(/(202[0-9])/)
-      if (y) postYears.push(parseInt(y[1], 10))
+      const y = match[1] || match[0].match(/\b(202[0-9])\b/)?.[1]
+      if (y) postYears.push(parseInt(y, 10))
     }
   }
   
-  // Run Strategy 2: Table rows containing both a year and a time (HH:MM)
-  for (const rowMatch of html.matchAll(dateTimeCoPattern)) {
-    const row = rowMatch[0]
-    const yearInRow = row.match(/\b(202[0-9])\b/)
-    const timeInRow = row.match(/\d{1,2}:\d{2}/)
-    if (yearInRow && timeInRow) {
-      postYears.push(parseInt(yearInRow[1], 10))
-    }
-  }
-  
-  // Run Strategy 3: Keyword-based (covers common languages)
-  for (const pattern of lastPostKeywordPatterns) {
-    for (const match of html.matchAll(pattern)) {
-      const y = match[0].match(/(202[0-9])/)
-      if (y) postYears.push(parseInt(y[1], 10))
-    }
-  }
-  
-  // Deduplicate and determine freshness
+  // Determine freshness
   if (postYears.length > 0) {
     latestYear = Math.max(...postYears)
     isDateFresh = latestYear >= currentYear
   } else {
-    // Last resort: look for years anywhere — display only, NOT used for freshness.
+    // Fallback: page-wide year search — display only, NOT used for freshness
     const yearMatches = html.match(/\b(202[0-9])\b/g)
     if (yearMatches) {
-      const years = yearMatches.map(y => parseInt(y, 10))
-      latestYear = Math.max(...years)
-      // isDateFresh stays false
+      latestYear = Math.max(...yearMatches.map(y => parseInt(y, 10)))
     }
   }
   
@@ -558,11 +533,9 @@ function analyzeHtml(html: string): ForumCheck {
   }
   
   // Extract a sample date for display
-  const lastPostDateMatch = html.match(
-    /(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/
-  )
-  if (lastPostDateMatch) {
-    lastDateFound = lastPostDateMatch[1] || lastPostDateMatch[0]
+  const dateMatch = html.match(/(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/)
+  if (dateMatch) {
+    lastDateFound = dateMatch[1] || dateMatch[0]
   }
 
   // Check for authors/usernames (multilingual)
