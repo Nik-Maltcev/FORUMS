@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
-import { CheckCircle2, XCircle, AlertCircle, Globe, Loader2 } from "lucide-react"
+import { CheckCircle2, XCircle, AlertCircle, Globe, Loader2, Download } from "lucide-react"
 
 interface ForumCheck {
   hasCategories: boolean
@@ -151,6 +151,68 @@ export default function ForumChecker() {
     return "bg-red-500/10 text-red-600 border-red-500/20"
   }
 
+  const exportCsv = () => {
+    const doneResults = results.filter(r => r.status === "done" || r.status === "error")
+    if (doneResults.length === 0) return
+
+    const bom = "\uFEFF"
+    const headers = [
+      "URL",
+      "Статус",
+      "Счёт %",
+      "Вердикт",
+      "Разделы",
+      "Темы",
+      "Сообщения",
+      "Пагинация",
+      "Даты постов",
+      "Авторы",
+      "Счётчики",
+      "Свежий",
+      "Последний год",
+      "Последняя дата",
+      "Найдены счётчики",
+      "Ошибка",
+    ]
+
+    const escCsv = (val: string) => {
+      if (val.includes(";") || val.includes('"') || val.includes("\n")) {
+        return `"${val.replace(/"/g, '""')}"`
+      }
+      return val
+    }
+
+    const yn = (v?: boolean) => (v ? "Да" : "Нет")
+
+    const rows = doneResults.map(r => [
+      escCsv(r.url),
+      r.status === "error" ? "Ошибка" : "ОК",
+      r.score != null ? String(r.score) : "",
+      escCsv(r.verdict || ""),
+      yn(r.check?.hasCategories),
+      yn(r.check?.hasTopics),
+      yn(r.check?.hasPosts),
+      yn(r.check?.hasPagination),
+      yn(r.check?.hasLastDates),
+      yn(r.check?.hasAuthors),
+      yn(r.check?.hasCounters),
+      yn(r.check?.isDateFresh),
+      r.check?.latestYear != null ? String(r.check.latestYear) : "",
+      escCsv(r.check?.lastDateFound || ""),
+      escCsv(r.check?.countersFound?.join(", ") || ""),
+      escCsv(r.check?.error || ""),
+    ].join(";"))
+
+    const csv = bom + headers.map(escCsv).join(";") + "\n" + rows.join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `forum-check-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const CheckItem = ({ checked, label }: { checked: boolean; label: string }) => (
     <div className="flex items-center gap-2 text-sm">
       {checked ? (
@@ -210,7 +272,15 @@ export default function ForumChecker() {
 
         {results.length > 0 && (
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Результаты</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Результаты</h2>
+              {results.some(r => r.status === "done" || r.status === "error") && (
+                <Button variant="outline" size="sm" onClick={exportCsv}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Скачать CSV
+                </Button>
+              )}
+            </div>
 
             <div className="space-y-4">
               {results.map((result, idx) => (

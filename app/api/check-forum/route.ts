@@ -495,13 +495,30 @@ function analyzeHtml(html: string): ForumCheck {
     const trimmed = block.trim()
     if (!trimmed || trimmed.length > 500) continue
     const yearMatch = trimmed.match(/\b(202[0-9])\b/)
+    if (!yearMatch) continue
+    
     const timeMatch = trimmed.match(/\d{1,2}:\d{2}/)
-    if (yearMatch && timeMatch) {
+    // Also accept: year near a day number (1-31) in a short block with non-digit chars
+    // This catches dates without time like "27 August 2025" or "2025-03-17"
+    const datelikeMatch = trimmed.match(/\b([1-9]|[12][0-9]|3[01])\b/) && /[a-zA-Zа-яёА-ЯЁ\u0600-\u06FF\u0980-\u09FF\u0A00-\u0AFF\u3040-\u30FF\u4E00-\u9FFF./-]/.test(trimmed)
+    // Exclude pure numbers (counters like "2026 posts") — block must have
+    // non-digit, non-space content beyond just the year and a number
+    const looksLikeDate = trimmed.replace(/[\d\s.,]+/g, '').length > 0 && trimmed.length < 150
+    
+    if (timeMatch || (datelikeMatch && looksLikeDate)) {
       postYears.push(parseInt(yearMatch[1], 10))
     }
   }
   
-  // Strategy 2: CSS class-based — year inside elements with "last post" classes
+  // Strategy 2: datetime attributes — many modern forums store dates in
+  // <time datetime="2026-03-17T12:32:00"> or data-time attributes
+  const datetimePattern = /(?:datetime|data-time|data-date)="[^"]*\b(202[0-9])\b[^"]*"/gi
+  for (const match of html.matchAll(datetimePattern)) {
+    const y = match[1]
+    if (y) postYears.push(parseInt(y, 10))
+  }
+  
+  // Strategy 3: CSS class-based — year inside elements with "last post" classes
   const cssPatterns = [
     /class="[^"]*(?:last[-_]?post|lastpost|latest|recent|newest)[^"]*"[^>]*>[\s\S]{0,500}?\b(202[0-9])\b/gi,
     /class="[^"]*(?:lastsubject|last_post|latestThreadTitle|ipsDataItem_lastPoster|smalltext)[^"]*"[\s\S]{0,500}?\b(202[0-9])\b/gi,
@@ -530,6 +547,24 @@ function analyzeHtml(html: string): ForumCheck {
   if (!isDateFresh && recentInContainer.test(html)) {
     isDateFresh = true
     if (!latestYear) latestYear = currentYear
+  }
+  
+  // Strategy 4: Relative dates in text blocks — "today", "yesterday", "5 min ago"
+  // These indicate current activity but contain no year. Only count if the page
+  // has forum structure (categories/topics/posts already detected above).
+  if (!isDateFresh) {
+    const relativePatterns = /\b(today|yesterday|сегодня|вчера|heute|gestern|aujourd'hui|hier|hoy|ayer|oggi|ieri|dzisiaj|wczoraj|hoje|ontem|vandaag|gisteren|bugün|dün|idag|igår|tänään|eilen|σήμερα|χθες|今日|昨日|今天|昨天|오늘|어제)\b/i
+    const timeAgoPattern = /\d+\s*(?:minute|hour|second|min|sec|час|минут|секунд|stunde|minute|heure|hora|minuto|dakika|perc|minut|λεπτ|分|분|دقيق|שע)[\w]*\s*(?:ago|назад|vor|il y a|hace|fa|temu|geleden|önce|sedan|sitten|πριν|前|전|قبل|לפני)/i
+    
+    for (const block of textBlocks) {
+      const trimmed = block.trim()
+      if (!trimmed || trimmed.length > 200) continue
+      if (relativePatterns.test(trimmed) || timeAgoPattern.test(trimmed)) {
+        isDateFresh = true
+        if (!latestYear) latestYear = currentYear
+        break
+      }
+    }
   }
   
   // Extract a sample date for display
