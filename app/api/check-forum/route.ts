@@ -10,13 +10,11 @@ interface ForumCheck {
   hasCounters: boolean
   countersFound: string[]
   lastDateFound?: string
-  isDateFresh: boolean // true if last activity in 2026
+  isDateFresh: boolean // true if last activity is in the current year or later
   latestYear?: number
 }
 
 function analyzeHtml(html: string): ForumCheck {
-  const lowerHtml = html.toLowerCase()
-
   // Check for categories/sections (multilingual)
   const categoryPatterns = [
     /forum[-_]?categor/i,
@@ -575,12 +573,12 @@ function analyzeHtml(html: string): ForumCheck {
     }
   }
   
-  // If no year found yet but there are general "today/yesterday" on page with forum structure, consider it potentially fresh
-  // But only if we already detected this is a forum (has posts/topics)
-  if (!latestYear && generalRecentPatterns.some(p => p.test(html))) {
-    // More cautious: only mark fresh if page looks like an active forum
-    const looksLikeForum = /class="[^"]*last[-_]?post|lastpost|latest|последн/i.test(html)
-    if (looksLikeForum) {
+  // If no year found yet but there are "today/yesterday" patterns specifically inside
+  // last-post containers, mark as fresh. General page-wide matches (like the current
+  // date/time displayed in the header) should NOT count.
+  if (!latestYear) {
+    const lastPostContainerPattern = /class="[^"]*last[-_]?post[^"]*"[^>]*>[\s\S]{0,500}?(today|yesterday|сегодня|вчера|heute|gestern|aujourd'hui|hier|hoy|ayer|oggi|ieri|dzisiaj|wczoraj|hoje|ontem|vandaag|gisteren|bugün|dün|idag|igår|tänään|eilen|\d+\s*(?:minute|hour|min|час|минут)s?\s*(?:ago|назад|vor|il y a|hace|fa|temu))/i
+    if (lastPostContainerPattern.test(html)) {
       isDateFresh = true
       latestYear = currentYear
     }
