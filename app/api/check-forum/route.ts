@@ -477,124 +477,90 @@ function analyzeHtml(html: string): ForumCheck {
   let latestYear: number | undefined
   let isDateFresh = false
   
-  const currentYear = new Date().getFullYear() // 2026
+  const currentYear = new Date().getFullYear()
   
-  // Multilingual patterns for "Last post" / "Last message" / "Latest" sections
-  const lastPostPatterns = [
-    // EN
-    /last\s*(post|message|reply|activity)[^<]{0,200}(202[0-9]|2030)/gi,
-    /latest\s*(post|message|reply)[^<]{0,200}(202[0-9]|2030)/gi,
-    // RU
-    /последн[а-яё]*\s*(сообщени|пост|ответ|активност|комментари)[^<]{0,200}(202[0-9]|2030)/gi,
-    /посл\.\s*(сообщ|пост|коммент)[^<]{0,200}(202[0-9]|2030)/gi,
-    // DE
-    /letzt(er|e|es)?\s*(beitrag|nachricht|antwort)[^<]{0,200}(202[0-9]|2030)/gi,
-    // FR
-    /dernier\s*(message|post|réponse)[^<]{0,200}(202[0-9]|2030)/gi,
-    // ES
-    /últim[oa]?\s*(mensaje|post|respuesta)[^<]{0,200}(202[0-9]|2030)/gi,
-    // IT
-    /ultim[oa]?\s*(messaggio|post|risposta)[^<]{0,200}(202[0-9]|2030)/gi,
-    // PL
-    /ostatni[a-z]*\s*(wiadomość|post|odpowiedź)[^<]{0,200}(202[0-9]|2030)/gi,
-    // PT
-    /últim[oa]?\s*(mensagem|post|resposta)[^<]{0,200}(202[0-9]|2030)/gi,
-    // NL
-    /laatst[ea]?\s*(bericht|post|reactie)[^<]{0,200}(202[0-9]|2030)/gi,
-    // TR
-    /son\s*(mesaj|gönderi|yanıt)[^<]{0,200}(202[0-9]|2030)/gi,
-    // JP
-    /最新|最終|最後[^<]{0,200}(202[0-9]|2030)/gi,
-    // CN
-    /最新|最后|最後[^<]{0,200}(202[0-9]|2030)/gi,
-    // KR
-    /최근|마지막[^<]{0,200}(202[0-9]|2030)/gi,
-    // AR
-    /آخر\s*(مشاركة|رسالة|رد)[^<]{0,200}(202[0-9]|2030)/gi,
-    // Generic class-based patterns for last post columns
-    /class="[^"]*last[-_]?post[^"]*"[^>]*>[^<]*<[^>]*>[^<]*(202[0-9]|2030)/gi,
-    /class="[^"]*latest[^"]*"[^>]*>[^<]*<[^>]*>[^<]*(202[0-9]|2030)/gi,
+  // ── LANGUAGE-AGNOSTIC approach ──
+  // Instead of maintaining 52+ language-specific "last post" translations,
+  // we use structural/CSS clues and date+time co-occurrence to find post dates.
+  
+  // Strategy 1: CSS class-based — look for year inside elements whose class
+  // contains "last", "latest", "recent", or common forum engine class names
+  const cssLastPostPatterns = [
+    /class="[^"]*(?:last[-_]?post|lastpost|latest|recent|newest)[^"]*"[^>]*>[\s\S]{0,500}?(202[0-9])/gi,
+    // phpBB, vBulletin, XenForo, IPB, SMF common patterns
+    /class="[^"]*(?:lastsubject|last_post|latestThreadTitle|ipsDataItem_lastPoster|smalltext)[^"]*"[\s\S]{0,500}?(202[0-9])/gi,
   ]
   
-  // First try to find years specifically in "last post" contexts
-  let lastPostYears: number[] = []
-  for (const pattern of lastPostPatterns) {
-    const matches = html.matchAll(pattern)
-    for (const match of matches) {
-      const yearMatch = match[0].match(/(202[0-9]|2030)/)
-      if (yearMatch) {
-        lastPostYears.push(parseInt(yearMatch[1], 10))
-      }
+  // Strategy 2: Table-row co-occurrence — a year 202X appearing near a time
+  // pattern (HH:MM) within the same table row or small HTML block is very
+  // likely a post timestamp, not a page header or copyright.
+  // Match: "202X" within 200 chars of "HH:MM" inside a <tr> or short block
+  const dateTimeCoPattern = /<tr[\s\S]{0,2000}?<\/tr>/gi
+  
+  // Strategy 3: Multilingual "last post" header keywords (kept as a bonus,
+  // but now much shorter — just the most common languages)
+  const lastPostKeywordPatterns = [
+    /last\s*(?:post|message|reply|activity)[^<]{0,200}(202[0-9])/gi,
+    /latest\s*(?:post|message|reply)[^<]{0,200}(202[0-9])/gi,
+    /последн[а-яё]*\s*(?:сообщени|пост|ответ|активност|комментари)[^<]{0,200}(202[0-9])/gi,
+    /letzt(?:er|e|es)?\s*(?:beitrag|nachricht)[^<]{0,200}(202[0-9])/gi,
+    /dernier\s*(?:message|post)[^<]{0,200}(202[0-9])/gi,
+    /últim[oa]?\s*(?:mensaje|post|mensagem)[^<]{0,200}(202[0-9])/gi,
+  ]
+  
+  let postYears: number[] = []
+  
+  // Run Strategy 1: CSS-based
+  for (const pattern of cssLastPostPatterns) {
+    for (const match of html.matchAll(pattern)) {
+      const y = match[0].match(/(202[0-9])/)
+      if (y) postYears.push(parseInt(y[1], 10))
     }
   }
   
-  // If found years in "last post" sections, use those (reliable)
-  if (lastPostYears.length > 0) {
-    latestYear = Math.max(...lastPostYears)
+  // Run Strategy 2: Table rows containing both a year and a time (HH:MM)
+  for (const rowMatch of html.matchAll(dateTimeCoPattern)) {
+    const row = rowMatch[0]
+    const yearInRow = row.match(/\b(202[0-9])\b/)
+    const timeInRow = row.match(/\d{1,2}:\d{2}/)
+    if (yearInRow && timeInRow) {
+      postYears.push(parseInt(yearInRow[1], 10))
+    }
+  }
+  
+  // Run Strategy 3: Keyword-based (covers common languages)
+  for (const pattern of lastPostKeywordPatterns) {
+    for (const match of html.matchAll(pattern)) {
+      const y = match[0].match(/(202[0-9])/)
+      if (y) postYears.push(parseInt(y[1], 10))
+    }
+  }
+  
+  // Deduplicate and determine freshness
+  if (postYears.length > 0) {
+    latestYear = Math.max(...postYears)
     isDateFresh = latestYear >= currentYear
   } else {
-    // Fallback: look for years anywhere on the page — for display only.
-    // We do NOT set isDateFresh here because the year could come from
-    // the page header clock, copyright footer, or other non-post content.
-    const yearMatches = html.match(/\b(202[0-9]|2030)\b/g)
+    // Last resort: look for years anywhere — display only, NOT used for freshness.
+    const yearMatches = html.match(/\b(202[0-9])\b/g)
     if (yearMatches) {
       const years = yearMatches.map(y => parseInt(y, 10))
       latestYear = Math.max(...years)
-      // isDateFresh stays false — we can't confirm this year is from a post
+      // isDateFresh stays false
     }
   }
   
-  // Check for "today", "yesterday", "X minutes/hours ago" in last post contexts
-  const recentActivityInLastPost = [
-    // EN in last post context
-    /last\s*(post|message)[^<]{0,100}(today|yesterday|\d+\s*(minute|hour|min)s?\s*ago)/i,
-    /latest[^<]{0,100}(today|yesterday|\d+\s*(minute|hour|min)s?\s*ago)/i,
-    // RU
-    /последн[а-яё]*[^<]{0,100}(сегодня|вчера|\d+\s*(минут|час)[а-яё]*\s*назад)/i,
-    // DE
-    /letzt[^<]{0,100}(heute|gestern|\d+\s*(stunde|minute)n?\s*vor)/i,
-    // FR
-    /dernier[^<]{0,100}(aujourd'hui|hier|il y a\s*\d+\s*(heure|minute))/i,
-    // Generic class-based
-    /class="[^"]*last[-_]?post[^"]*"[^>]*>[^<]*(today|yesterday|сегодня|вчера|heute|gestern|aujourd'hui|hier|hoy|ayer|oggi|ieri)/i,
-  ]
-  
-  // Also check general "today/yesterday/X ago" but only if near last-post-like text
-  const generalRecentPatterns = [
-    /today|сегодня|heute|aujourd'hui|hoy|oggi|dzisiaj|hoje|vandaag|bugün|idag|tänään|σήμερα|今日|今天|오늘/i,
-    /yesterday|вчера|gestern|hier|ayer|ieri|wczoraj|ontem|gisteren|dün|igår|eilen|χθες|昨日|昨天|어제/i,
-    /\d+\s*(minute|hour|min|час|минут|stunde|heure|hora|ora|godzin)s?\s*(ago|назад|vor|il y a|hace|fa|temu|geleden|önce)/i,
-  ]
-  
-  // If we find recent activity patterns in last post sections, mark as fresh
-  for (const pattern of recentActivityInLastPost) {
-    if (pattern.test(html)) {
-      isDateFresh = true
-      if (!latestYear) latestYear = currentYear
-      break
-    }
+  // Check for "today/yesterday/X ago" inside last-post CSS containers
+  const recentInContainer = /class="[^"]*(?:last[-_]?post|lastpost|latest|recent)[^"]*"[^>]*>[\s\S]{0,500}?(today|yesterday|сегодня|вчера|heute|gestern|aujourd'hui|hier|hoy|ayer|oggi|ieri|\d+\s*(?:minute|hour|min|час|минут)s?\s*(?:ago|назад|vor|il y a|hace|fa|temu))/i
+  if (!isDateFresh && recentInContainer.test(html)) {
+    isDateFresh = true
+    if (!latestYear) latestYear = currentYear
   }
   
-  // If no year found yet but there are "today/yesterday" patterns specifically inside
-  // last-post containers, mark as fresh. General page-wide matches (like the current
-  // date/time displayed in the header) should NOT count.
-  if (!latestYear) {
-    const lastPostContainerPattern = /class="[^"]*last[-_]?post[^"]*"[^>]*>[\s\S]{0,500}?(today|yesterday|сегодня|вчера|heute|gestern|aujourd'hui|hier|hoy|ayer|oggi|ieri|dzisiaj|wczoraj|hoje|ontem|vandaag|gisteren|bugün|dün|idag|igår|tänään|eilen|\d+\s*(?:minute|hour|min|час|минут)s?\s*(?:ago|назад|vor|il y a|hace|fa|temu))/i
-    if (lastPostContainerPattern.test(html)) {
-      isDateFresh = true
-      latestYear = currentYear
-    }
-  }
-  
-  // Extract a sample date for display from last post sections
+  // Extract a sample date for display
   const lastPostDateMatch = html.match(
-    /last\s*(?:post|message)[^<]{0,100}(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/i
-  ) || html.match(
-    /последн[а-яё]*\s*(?:сообщ|пост)[^<]{0,100}(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/i
-  ) || html.match(
     /(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})/
   )
-  
   if (lastPostDateMatch) {
     lastDateFound = lastPostDateMatch[1] || lastPostDateMatch[0]
   }
