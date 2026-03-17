@@ -528,17 +528,19 @@ function analyzeHtml(html: string): ForumCheck {
     }
   }
   
-  // If found years in "last post" sections, use those
+  // If found years in "last post" sections, use those (reliable)
   if (lastPostYears.length > 0) {
     latestYear = Math.max(...lastPostYears)
     isDateFresh = latestYear >= currentYear
   } else {
-    // Fallback: look for years anywhere on the page (less reliable)
+    // Fallback: look for years anywhere on the page — for display only.
+    // We do NOT set isDateFresh here because the year could come from
+    // the page header clock, copyright footer, or other non-post content.
     const yearMatches = html.match(/\b(202[0-9]|2030)\b/g)
     if (yearMatches) {
       const years = yearMatches.map(y => parseInt(y, 10))
       latestYear = Math.max(...years)
-      isDateFresh = latestYear >= currentYear
+      // isDateFresh stays false — we can't confirm this year is from a post
     }
   }
   
