@@ -496,17 +496,23 @@ function analyzeHtml(html: string): ForumCheck {
     if (!trimmed || trimmed.length > 500) continue
     const yearMatch = trimmed.match(/\b(202[0-9])\b/)
     if (!yearMatch) continue
+    const year = parseInt(yearMatch[1], 10)
+    // Reject years in the future — can't have posts from 2027+ when it's 2026
+    if (year > currentYear) continue
     
     const timeMatch = trimmed.match(/\d{1,2}:\d{2}/)
     // Also accept: year near a day number (1-31) in a short block with non-digit chars
     // This catches dates without time like "27 August 2025" or "2025-03-17"
     const datelikeMatch = trimmed.match(/\b([1-9]|[12][0-9]|3[01])\b/) && /[a-zA-Zа-яёА-ЯЁ\u0600-\u06FF\u0980-\u09FF\u0A00-\u0AFF\u3040-\u30FF\u4E00-\u9FFF./-]/.test(trimmed)
+    // Exclude pure counters like "2026 сообщений" or "2026 posts" —
+    // a counter block is short, has the year followed immediately by a word like posts/сообщений
+    const isCounter = /\b202[0-9]\s+(posts?|сообщени|тем|topics?|messages?|views?|просмотр|ответ|replies)/i.test(trimmed)
     // Exclude pure numbers (counters like "2026 posts") — block must have
     // non-digit, non-space content beyond just the year and a number
-    const looksLikeDate = trimmed.replace(/[\d\s.,]+/g, '').length > 0 && trimmed.length < 150
+    const looksLikeDate = !isCounter && trimmed.replace(/[\d\s.,]+/g, '').length > 0 && trimmed.length < 150
     
     if (timeMatch || (datelikeMatch && looksLikeDate)) {
-      postYears.push(parseInt(yearMatch[1], 10))
+      postYears.push(year)
     }
   }
   
@@ -514,8 +520,8 @@ function analyzeHtml(html: string): ForumCheck {
   // <time datetime="2026-03-17T12:32:00"> or data-time attributes
   const datetimePattern = /(?:datetime|data-time|data-date)="[^"]*\b(202[0-9])\b[^"]*"/gi
   for (const match of html.matchAll(datetimePattern)) {
-    const y = match[1]
-    if (y) postYears.push(parseInt(y, 10))
+    const y = parseInt(match[1], 10)
+    if (y <= currentYear) postYears.push(y)
   }
   
   // Strategy 3: CSS class-based — year inside elements with "last post" classes
@@ -525,8 +531,11 @@ function analyzeHtml(html: string): ForumCheck {
   ]
   for (const pattern of cssPatterns) {
     for (const match of html.matchAll(pattern)) {
-      const y = match[1] || match[0].match(/\b(202[0-9])\b/)?.[1]
-      if (y) postYears.push(parseInt(y, 10))
+      const raw = match[1] || match[0].match(/\b(202[0-9])\b/)?.[1]
+      if (raw) {
+        const y = parseInt(raw, 10)
+        if (y <= currentYear) postYears.push(y)
+      }
     }
   }
   
@@ -538,7 +547,8 @@ function analyzeHtml(html: string): ForumCheck {
     // Fallback: page-wide year search — display only, NOT used for freshness
     const yearMatches = html.match(/\b(202[0-9])\b/g)
     if (yearMatches) {
-      latestYear = Math.max(...yearMatches.map(y => parseInt(y, 10)))
+      const validYears = yearMatches.map(y => parseInt(y, 10)).filter(y => y <= currentYear)
+      if (validYears.length > 0) latestYear = Math.max(...validYears)
     }
   }
   
@@ -553,8 +563,8 @@ function analyzeHtml(html: string): ForumCheck {
   // These indicate current activity but contain no year. Only count if the page
   // has forum structure (categories/topics/posts already detected above).
   if (!isDateFresh) {
-    const relativePatterns = /\b(today|yesterday|сегодня|вчера|heute|gestern|aujourd'hui|hier|hoy|ayer|oggi|ieri|dzisiaj|wczoraj|hoje|ontem|vandaag|gisteren|bugün|dün|idag|igår|tänään|eilen|σήμερα|χθες|今日|昨日|今天|昨天|오늘|어제)\b/i
-    const timeAgoPattern = /\d+\s*(?:minute|hour|second|min|sec|час|минут|секунд|stunde|minute|heure|hora|minuto|dakika|perc|minut|λεπτ|分|분|دقيق|שע)[\w]*\s*(?:ago|назад|vor|il y a|hace|fa|temu|geleden|önce|sedan|sitten|πριν|前|전|قبل|לפני)/i
+    const relativePatterns = /\b(today|yesterday|сегодня|вчера|только что|сейчас|just now|heute|gestern|aujourd'hui|hier|hoy|ayer|oggi|ieri|dzisiaj|wczoraj|hoje|ontem|vandaag|gisteren|bugün|dün|idag|igår|tänään|eilen|σήμερα|χθες|今日|昨日|今天|昨天|오늘|어제)\b/i
+    const timeAgoPattern = /\d+\s*(?:minute|hour|second|min|sec|час|минут|секунд|миnut|stunde|heure|hora|minuto|dakika|perc|minut|λεπτ|分|분|دقيق|שע)[\w]*\s*(?:ago|назад|vor|il y a|hace|fa|temu|geleden|önce|sedan|sitten|πριν|前|전|قبل|לפני)/i
     
     for (const block of textBlocks) {
       const trimmed = block.trim()
