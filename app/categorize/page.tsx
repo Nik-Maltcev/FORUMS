@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
-import { AlertCircle, Loader2, Download, Tag, Eye, EyeOff } from "lucide-react"
+import { AlertCircle, Loader2, Download, Tag, Eye, EyeOff, X } from "lucide-react"
 
 interface CategorizeResult {
   category: string
@@ -28,6 +28,7 @@ export default function CategorizePage() {
   const [showKey, setShowKey] = useState(false)
   const [results, setResults] = useState<ForumCatResult[]>([])
   const [isChecking, setIsChecking] = useState(false)
+  const [activeFilter, setActiveFilter] = useState<string | null>(null)
 
   const parseUrls = (text: string): string[] =>
     text
@@ -41,6 +42,7 @@ export default function CategorizePage() {
     if (urls.length === 0 || !apiKey.trim()) return
 
     setIsChecking(true)
+    setActiveFilter(null)
     setResults(urls.map((url) => ({ url, status: "pending" })))
 
     for (let i = 0; i < urls.length; i++) {
@@ -77,6 +79,24 @@ export default function CategorizePage() {
 
     setIsChecking(false)
   }
+
+  // Collect unique categories from done results, sorted by count
+  const categories = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const r of results) {
+      if (r.status === "done" && r.result?.category) {
+        counts[r.result.category] = (counts[r.result.category] || 0) + 1
+      }
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])
+  }, [results])
+
+  const filteredResults = useMemo(() => {
+    if (!activeFilter) return results
+    return results.filter(
+      (r) => r.status === "done" && r.result?.category === activeFilter
+    )
+  }, [results, activeFilter])
 
   const getConfidenceColor = (confidence?: string) => {
     if (confidence === "высокая") return "bg-green-500/10 text-green-600 border-green-500/20"
@@ -115,14 +135,14 @@ export default function CategorizePage() {
     URL.revokeObjectURL(url)
   }
 
+  const doneCount = results.filter((r) => r.status === "done").length
+
   return (
     <main className="min-h-screen bg-background p-6 md:p-10">
       <div className="mx-auto max-w-4xl space-y-8">
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">Категоризация форумов</h1>
-          <p className="text-muted-foreground">
-            Определение тематики форумов с помощью Gemini AI
-          </p>
+          <p className="text-muted-foreground">Определение тематики форумов с помощью Gemini AI</p>
         </div>
 
         <Card>
@@ -190,8 +210,15 @@ export default function CategorizePage() {
         {results.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Результаты</h2>
-              {results.some((r) => r.status === "done" || r.status === "error") && (
+              <h2 className="text-xl font-semibold">
+                Результаты
+                {activeFilter && (
+                  <span className="ml-2 text-base font-normal text-muted-foreground">
+                    — {activeFilter} ({filteredResults.length})
+                  </span>
+                )}
+              </h2>
+              {doneCount > 0 && (
                 <Button variant="outline" size="sm" onClick={exportCsv}>
                   <Download className="mr-2 h-4 w-4" />
                   Скачать CSV
@@ -199,8 +226,36 @@ export default function CategorizePage() {
               )}
             </div>
 
+            {/* Category filter chips */}
+            {categories.length > 1 && (
+              <div className="flex flex-wrap gap-2">
+                {activeFilter && (
+                  <button
+                    onClick={() => setActiveFilter(null)}
+                    className="flex items-center gap-1 rounded-full border px-3 py-1 text-sm bg-primary text-primary-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                    Сбросить
+                  </button>
+                )}
+                {categories.map(([cat, count]) => (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveFilter(activeFilter === cat ? null : cat)}
+                    className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                      activeFilter === cat
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background hover:bg-muted"
+                    }`}
+                  >
+                    {cat} <span className="opacity-60">{count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="space-y-3">
-              {results.map((result, idx) => (
+              {filteredResults.map((result, idx) => (
                 <Card key={idx}>
                   <div className="flex items-start justify-between gap-4 p-4">
                     <div className="min-w-0 flex-1 space-y-1">
