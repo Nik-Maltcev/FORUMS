@@ -108,7 +108,7 @@ ${meta}
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 256 },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 256, thinkingConfig: { thinkingBudget: 0 } },
         }),
       }
     )
@@ -119,12 +119,18 @@ ${meta}
     }
 
     const geminiData = await geminiRes.json()
-    const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || ""
+    // Collect all text parts (thinking models may split into multiple parts)
+    const parts = geminiData?.candidates?.[0]?.content?.parts ?? []
+    const text = parts.map((p: { text?: string }) => p.text ?? "").join("")
 
-    // Parse JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    // Strip markdown code fences and extract JSON object
+    const cleaned = text.replace(/```(?:json)?/gi, "").replace(/```/g, "")
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
-      return NextResponse.json({ error: "Не удалось разобрать ответ Gemini" }, { status: 500 })
+      return NextResponse.json(
+        { error: `Не удалось разобрать ответ Gemini: ${text.slice(0, 200)}` },
+        { status: 500 }
+      )
     }
 
     const result: CategorizeResult = JSON.parse(jsonMatch[0])
