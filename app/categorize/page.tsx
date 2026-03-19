@@ -3,10 +3,11 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
-import { AlertCircle, Loader2, Download, Tag } from "lucide-react"
+import { AlertCircle, Loader2, Download, Tag, Eye, EyeOff } from "lucide-react"
 
 interface CategorizeResult {
   category: string
@@ -23,6 +24,8 @@ interface ForumCatResult {
 
 export default function CategorizePage() {
   const [input, setInput] = useState("")
+  const [apiKey, setApiKey] = useState("")
+  const [showKey, setShowKey] = useState(false)
   const [results, setResults] = useState<ForumCatResult[]>([])
   const [isChecking, setIsChecking] = useState(false)
 
@@ -48,7 +51,7 @@ export default function CategorizePage() {
         const res = await fetch("/api/categorize-forum", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
+          body: JSON.stringify({ url, apiKey: apiKey.trim() }),
         })
         const data: CategorizeResult = await res.json()
 
@@ -124,6 +127,36 @@ export default function CategorizePage() {
 
         <Card>
           <CardHeader>
+            <CardTitle className="text-lg">Настройки</CardTitle>
+            <CardDescription>
+              Получите бесплатный API ключ на{" "}
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                aistudio.google.com
+              </a>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="relative">
+              <Input
+                type={showKey ? "text" : "password"}
+                placeholder="Gemini API Key"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="pr-10 font-mono text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="text-lg">Список форумов</CardTitle>
             <CardDescription>Один URL на строку или через запятую</CardDescription>
           </CardHeader>
@@ -136,7 +169,7 @@ export default function CategorizePage() {
             />
             <Button
               onClick={handleCheck}
-              disabled={isChecking || !input.trim()}
+              disabled={isChecking || !input.trim() || !apiKey.trim()}
               className="w-full sm:w-auto"
             >
               {isChecking ? (

@@ -51,11 +51,10 @@ function extractPageMeta(html: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const { url } = await request.json()
+    const { url, apiKey } = await request.json()
 
-    const apiKey = process.env.GEMINI_API_KEY
     if (!url) return NextResponse.json({ error: "URL is required" }, { status: 400 })
-    if (!apiKey) return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 })
+    if (!apiKey) return NextResponse.json({ error: "Gemini API key is required" }, { status: 400 })
 
     // Fetch forum HTML
     const controller = new AbortController()
