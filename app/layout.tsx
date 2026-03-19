@@ -37,6 +37,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans antialiased">
+        <nav className="border-b bg-background">
+          <div className="mx-auto max-w-4xl px-6 md:px-10 flex gap-6 h-12 items-center">
+            <a href="/" className="text-sm font-medium hover:text-primary transition-colors">
+              Проверка активности
+            </a>
+            <a href="/categorize" className="text-sm font-medium hover:text-primary transition-colors">
+              Категоризация
+            </a>
+          </div>
+        </nav>
         {children}
         <Analytics />
       </body>
