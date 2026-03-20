@@ -256,7 +256,7 @@ function extractTopicsFromSection(html: string): TopicInfo[] {
 
     // Replies — <dt>Ответы</dt><dd>205</dd> or <dt>Replies</dt><dd>205</dd>
     let replies = 0
-    const pairsMatch = chunk.match(/<dt>\s*(?:Ответ|Repli|Posts|Сообщени|Antwort|Réponse|Respuesta|Odpowied|Rispost)\w*\s*<\/dt>\s*<dd>\s*([\d\s.,тысkKmMмлн]+)\s*<\/dd>/i)
+    const pairsMatch = chunk.match(/<dt>\s*(?:Ответы|Ответов|Replies|Posts|Сообщений|Сообщения|Antworten|Réponses|Respuestas|Odpowiedzi|Risposte)[^<]*<\/dt>\s*<dd>\s*([\d\s.,а-яёa-z]+)\s*<\/dd>/i)
     if (pairsMatch) {
       replies = parseCount(pairsMatch[1])
     }
@@ -293,7 +293,7 @@ function extractTopicsFromSection(html: string): TopicInfo[] {
 
       let replies = 0
       // dl/dd pairs (some table-based forums also use this)
-      const dlMatch = row.match(/<dt>\s*(?:Ответ|Repli|Posts|Сообщени)\w*\s*<\/dt>\s*<dd>\s*([\d\s.,тысkKmMмлн]+)\s*<\/dd>/i)
+      const dlMatch = row.match(/<dt>\s*(?:Ответы|Ответов|Replies|Posts|Сообщений|Сообщения)[^<]*<\/dt>\s*<dd>\s*([\d\s.,а-яёa-z]+)\s*<\/dd>/i)
       if (dlMatch) {
         replies = parseCount(dlMatch[1])
       } else {
@@ -336,7 +336,7 @@ function extractTopicsFromSection(html: string): TopicInfo[] {
       if (topics.some(t => t.title === title)) continue
 
       let replies = 0
-      const dlMatch = chunk.match(/<dt>\s*(?:Ответ|Repli|Posts|Сообщени)\w*\s*<\/dt>\s*<dd>\s*([\d\s.,тысkKmMмлн]+)\s*<\/dd>/i)
+      const dlMatch = chunk.match(/<dt>\s*(?:Ответы|Ответов|Replies|Posts|Сообщений|Сообщения)[^<]*<\/dt>\s*<dd>\s*([\d\s.,а-яёa-z]+)\s*<\/dd>/i)
       if (dlMatch) {
         replies = parseCount(dlMatch[1])
       } else {
