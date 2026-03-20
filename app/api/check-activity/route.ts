@@ -179,25 +179,36 @@ function extractSectionLinks(html: string, baseUrl: string): { name: string; url
   const sections: { name: string; url: string }[] = []
   const seen = new Set<string>()
 
-  // Forum section links — look for links inside elements with forum/board/node classes
+  const clean = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+
+  // Strategy 1: XenForo node-title links
+  const xfPattern = /class="[^"]*node-title[^"]*"[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>([^<]{2,80})<\/a>/gi
+  let m: RegExpExecArray | null
+  while ((m = xfPattern.exec(clean)) !== null && sections.length < 15) {
+    const href = m[1], name = m[2].trim()
+    if (!name) continue
+    const fullUrl = resolveUrl(baseUrl, href)
+    if (seen.has(fullUrl)) continue
+    if (/(?:threads\/\d|\/t\/\d)/i.test(fullUrl)) continue
+    seen.add(fullUrl)
+    sections.push({ name, url: fullUrl })
+  }
+
+  // Strategy 2: Generic forum section links
   const patterns = [
-    // phpBB, SMF, vBulletin, IPB style
-    /class="[^"]*(?:forumtitle|forum[-_]?name|board[-_]?name|node[-_]?title|forumlink|topictitle)[^"]*"[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>([^<]{2,80})<\/a>/gi,
-    // Link inside forum class
-    /<a[^>]*class="[^"]*(?:forumtitle|forum[-_]?name|board[-_]?name|node[-_]?title|forumlink)[^"]*"[^>]*href="([^"]*)"[^>]*>([^<]{2,80})<\/a>/gi,
-    // XenForo node links
-    /<a[^>]*href="([^"]*(?:forums?\/|board\/|forumdisplay|viewforum)[^"]*)"[^>]*>([^<]{2,80})<\/a>/gi,
+    /class="[^"]*(?:forumtitle|forum[-_]?name|board[-_]?name|forumlink)[^"]*"[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>([^<]{2,80})<\/a>/gi,
+    /<a[^>]*class="[^"]*(?:forumtitle|forum[-_]?name|board[-_]?name|forumlink)[^"]*"[^>]*href="([^"]*)"[^>]*>([^<]{2,80})<\/a>/gi,
+    /<a[^>]*href="([^"]*(?:forums?\/[^"]*|board\/[^"]*|forumdisplay[^"]*|viewforum[^"]*))"\s[^>]*>([^<]{2,80})<\/a>/gi,
   ]
 
   for (const pattern of patterns) {
-    let m: RegExpExecArray | null
-    while ((m = pattern.exec(html)) !== null && sections.length < 15) {
-      const href = m[1]
-      const name = m[2].trim()
+    while ((m = pattern.exec(clean)) !== null && sections.length < 15) {
+      const href = m[1], name = m[2].trim()
       if (!name || name.length < 2) continue
       const fullUrl = resolveUrl(baseUrl, href)
       if (seen.has(fullUrl)) continue
-      // Skip topic/thread links
       if (/(?:viewtopic|showthread|showtopic|threads\/\d|\/t\/\d)/i.test(fullUrl)) continue
       seen.add(fullUrl)
       sections.push({ name, url: fullUrl })
@@ -207,89 +218,134 @@ function extractSectionLinks(html: string, baseUrl: string): { name: string; url
   return sections
 }
 
+function parseCount(raw: string): number {
+  // "205" -> 205, "14 тыс." -> 14000, "1.2K" -> 1200, "24,500" -> 24500
+  const s = raw.trim().replace(/\s/g, "")
+  if (/тыс|k$/i.test(s)) {
+    const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."))
+    return Math.round(n * 1000)
+  }
+  if (/млн|m$/i.test(s)) {
+    const n = parseFloat(s.replace(/[^\d.,]/g, "").replace(",", "."))
+    return Math.round(n * 1000000)
+  }
+  return parseInt(s.replace(/[,.']/g, ""), 10) || 0
+}
+
 function extractTopicsFromSection(html: string): TopicInfo[] {
   const topics: TopicInfo[] = []
   const clean = html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
 
-  // Strategy 1: Table rows
-  const rowPattern = /<tr[^>]*>[\s\S]*?<\/tr>/gi
-  const rows = clean.match(rowPattern) || []
-
-  for (const row of rows) {
+  // ── Strategy 1: XenForo structItem ──
+  // Split by structItem boundaries instead of trying to match nested divs
+  const structParts = clean.split(/(?=<div[^>]*class="[^"]*structItem\b[^"]*structItem--thread)/)
+  for (const part of structParts) {
     if (topics.length >= 100) break
-    const hasTopicLink = /(?:viewtopic|showtopic|showthread|threads?\/\d|topic\/\d|\/t\/\d)/i.test(row)
-    const hasTopicClass = /class="[^"]*(?:topictitle|threadtitle|topic[-_]?title|thread[-_]?title|subject)[^"]*"/i.test(row)
-    if (!hasTopicLink && !hasTopicClass) continue
+    if (!part.includes("structItem--thread")) continue
 
-    // Title
-    const titleMatch = row.match(/<a[^>]*(?:viewtopic|showtopic|showthread|threads?\/\d|topic\/\d|\/t\/\d)[^>]*>([^<]{2,150})<\/a>/i)
-      || row.match(/<a[^>]*class="[^"]*(?:topictitle|threadtitle|topic[-_]?title|thread[-_]?title|subject)[^"]*"[^>]*>([^<]{2,150})<\/a>/i)
+    // Take only up to the next structItem or a reasonable chunk
+    const chunk = part.slice(0, 5000)
+
+    // Title — link inside structItem-title
+    const titleMatch = chunk.match(/structItem-title[\s\S]{0,500}?<a[^>]*href="[^"]*threads\/[^"]*"[^>]*>([\s\S]{2,200}?)<\/a>/i)
     if (!titleMatch) continue
-    const title = titleMatch[1].trim()
+    const title = titleMatch[1].replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&#039;/g, "'").trim()
+    if (!title || title.length < 2) continue
 
-    // Replies count — look for numbers in cells/spans
+    // Replies — <dt>Ответы</dt><dd>205</dd> or <dt>Replies</dt><dd>205</dd>
     let replies = 0
-    // Try specific reply/post count classes first
-    const replyClassMatch = row.match(/class="[^"]*(?:repli|posts|answer|ответ|сообщени)[^"]*"[^>]*>[\s]*(\d[\d,.']*)/i)
-    if (replyClassMatch) {
-      replies = parseInt(replyClassMatch[1].replace(/[,.']/g, ""), 10) || 0
-    } else {
-      // Fallback: grab numbers from td elements (usually 2nd or 3rd number is replies)
-      const tdNums = row.match(/<td[^>]*>\s*(\d[\d,.']*)\s*<\/td>/gi) || []
-      const nums = tdNums.map(td => {
-        const n = td.match(/(\d[\d,.']*)/)?.[1]
-        return n ? parseInt(n.replace(/[,.']/g, ""), 10) : 0
-      }).filter(n => n > 0)
-      if (nums.length >= 1) replies = nums[0]
+    const pairsMatch = chunk.match(/<dt>\s*(?:Ответ|Repli|Posts|Сообщени|Antwort|Réponse|Respuesta|Odpowied|Rispost)\w*\s*<\/dt>\s*<dd>\s*([\d\s.,тысkKmMмлн]+)\s*<\/dd>/i)
+    if (pairsMatch) {
+      replies = parseCount(pairsMatch[1])
     }
 
-    // Date — prefer "last post" date
-    const lastPostBlock = row.match(/class="[^"]*(?:last[-_]?post|lastpost|latest|last_post)[^"]*"[^>]*>([\s\S]{0,500})/i)
-    let dateInfo: { dateStr?: string; timestamp?: number }
-    if (lastPostBlock) {
-      dateInfo = extractDateFromBlock(lastPostBlock[1])
-    } else {
-      dateInfo = extractDateFromBlock(row)
+    // Date — prefer structItem-latestDate or structItem-cell--latest
+    let dateInfo: { dateStr?: string; timestamp?: number } = {}
+    const latestBlock = chunk.match(/structItem-cell--latest([\s\S]{0,800})/i)
+      || chunk.match(/structItem-latestDate([\s\S]{0,400})/i)
+    if (latestBlock) {
+      dateInfo = extractDateFromBlock(latestBlock[1])
+    }
+    if (!dateInfo.timestamp) {
+      dateInfo = extractDateFromBlock(chunk)
     }
 
-    topics.push({
-      title,
-      replies,
-      lastPostDate: dateInfo.dateStr,
-      lastPostTimestamp: dateInfo.timestamp,
-    })
+    topics.push({ title, replies, lastPostDate: dateInfo.dateStr, lastPostTimestamp: dateInfo.timestamp })
   }
 
-  // Strategy 2: Div-based (XenForo 2, Discourse)
-  if (topics.length < 3) {
-    const divPattern = /<(?:div|li|article)[^>]*class="[^"]*(?:structItem|topic-list-item|discussion|thread-row|ipsDataItem)[^"]*"[^>]*>[\s\S]*?<\/(?:div|li|article)>/gi
-    const blocks = clean.match(divPattern) || []
+  // ── Strategy 2: Table rows (phpBB, SMF, vBulletin) ──
+  if (topics.length === 0) {
+    const rowPattern = /<tr[^>]*>[\s\S]*?<\/tr>/gi
+    const rows = clean.match(rowPattern) || []
 
-    for (const block of blocks) {
+    for (const row of rows) {
       if (topics.length >= 100) break
+      const hasTopicLink = /(?:viewtopic|showtopic|showthread|threads?\/\d|topic\/\d|\/t\/\d)/i.test(row)
+      const hasTopicClass = /class="[^"]*(?:topictitle|threadtitle|topic[-_]?title|thread[-_]?title|subject)[^"]*"/i.test(row)
+      if (!hasTopicLink && !hasTopicClass) continue
 
-      const titleMatch = block.match(/<a[^>]*>([^<]{2,150})<\/a>/i)
+      const titleMatch = row.match(/<a[^>]*(?:viewtopic|showtopic|showthread|threads?\/\d|topic\/\d|\/t\/\d)[^>]*>([^<]{2,150})<\/a>/i)
+        || row.match(/<a[^>]*class="[^"]*(?:topictitle|threadtitle|topic[-_]?title|thread[-_]?title|subject)[^"]*"[^>]*>([^<]{2,150})<\/a>/i)
+      if (!titleMatch) continue
+      const title = titleMatch[1].trim()
+
+      let replies = 0
+      // dl/dd pairs (some table-based forums also use this)
+      const dlMatch = row.match(/<dt>\s*(?:Ответ|Repli|Posts|Сообщени)\w*\s*<\/dt>\s*<dd>\s*([\d\s.,тысkKmMмлн]+)\s*<\/dd>/i)
+      if (dlMatch) {
+        replies = parseCount(dlMatch[1])
+      } else {
+        const replyClassMatch = row.match(/class="[^"]*(?:repli|posts|answer|ответ|сообщени)[^"]*"[^>]*>[\s]*(\d[\d,.'тысkK]*)/i)
+        if (replyClassMatch) {
+          replies = parseCount(replyClassMatch[1])
+        } else {
+          const tdNums = row.match(/<td[^>]*>\s*(\d[\d,.']*)\s*<\/td>/gi) || []
+          const nums = tdNums.map(td => {
+            const n = td.match(/(\d[\d,.']*)/)?.[1]
+            return n ? parseInt(n.replace(/[,.']/g, ""), 10) : 0
+          }).filter(n => n > 0)
+          if (nums.length >= 1) replies = nums[0]
+        }
+      }
+
+      const lastPostBlock = row.match(/class="[^"]*(?:last[-_]?post|lastpost|latest|last_post)[^"]*"[^>]*>([\s\S]{0,500})/i)
+      let dateInfo: { dateStr?: string; timestamp?: number }
+      if (lastPostBlock) {
+        dateInfo = extractDateFromBlock(lastPostBlock[1])
+      } else {
+        dateInfo = extractDateFromBlock(row)
+      }
+
+      topics.push({ title, replies, lastPostDate: dateInfo.dateStr, lastPostTimestamp: dateInfo.timestamp })
+    }
+  }
+
+  // ── Strategy 3: IPB / Discourse / generic div-based ──
+  if (topics.length === 0) {
+    const divParts = clean.split(/(?=<(?:div|li|article)[^>]*class="[^"]*(?:ipsDataItem|topic-list-item|discussion|thread-row|cTopicList))/)
+    for (const part of divParts) {
+      if (topics.length >= 100) break
+      if (!/ipsDataItem|topic-list-item|discussion|thread-row|cTopicList/i.test(part.slice(0, 200))) continue
+      const chunk = part.slice(0, 5000)
+
+      const titleMatch = chunk.match(/<a[^>]*>([^<]{2,150})<\/a>/i)
       if (!titleMatch) continue
       const title = titleMatch[1].trim()
       if (topics.some(t => t.title === title)) continue
 
       let replies = 0
-      const replyMatch = block.match(/(?:repli|posts|answer|ответ|сообщени)\S*[:\s]*(\d[\d,.']*)/i)
-        || block.match(/<dd[^>]*>\s*(\d[\d,.']*)\s*<\/dd>/i)
-      if (replyMatch) {
-        replies = parseInt(replyMatch[1].replace(/[,.']/g, ""), 10) || 0
+      const dlMatch = chunk.match(/<dt>\s*(?:Ответ|Repli|Posts|Сообщени)\w*\s*<\/dt>\s*<dd>\s*([\d\s.,тысkKmMмлн]+)\s*<\/dd>/i)
+      if (dlMatch) {
+        replies = parseCount(dlMatch[1])
+      } else {
+        const replyMatch = chunk.match(/(?:repli|posts|answer|ответ|сообщени)\S*[:\s]*(\d[\d,.'тысkK]*)/i)
+        if (replyMatch) replies = parseCount(replyMatch[1])
       }
 
-      const dateInfo = extractDateFromBlock(block)
-
-      topics.push({
-        title,
-        replies,
-        lastPostDate: dateInfo.dateStr,
-        lastPostTimestamp: dateInfo.timestamp,
-      })
+      const dateInfo = extractDateFromBlock(chunk)
+      topics.push({ title, replies, lastPostDate: dateInfo.dateStr, lastPostTimestamp: dateInfo.timestamp })
     }
   }
 
