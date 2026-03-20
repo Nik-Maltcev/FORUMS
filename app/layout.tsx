@@ -45,6 +45,9 @@ export default function RootLayout({
             <a href="/categorize" className="text-sm font-medium hover:text-primary transition-colors">
               Категоризация
             </a>
+            <a href="/activity" className="text-sm font-medium hover:text-primary transition-colors">
+              Целостность
+            </a>
           </div>
         </nav>
         {children}
