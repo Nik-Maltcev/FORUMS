@@ -369,7 +369,7 @@ export async function POST(request: NextRequest) {
     // Step 2: Find section links
     const sectionLinks = extractSectionLinks(mainHtml, url)
 
-    // Step 3: Also try to extract topics from main page directly (some forums show topics on main)
+    // Step 3: Extract topics from main page directly
     const mainTopics = extractTopicsFromSection(mainHtml)
 
     const sections: SectionInfo[] = []
@@ -378,23 +378,29 @@ export async function POST(request: NextRequest) {
       sections.push({ name: "Главная", url, topics: mainTopics })
     }
 
-    // Step 4: Crawl sections (limit to 10 to avoid abuse)
+    // Step 4: Crawl sections in parallel (batches of 5, limit 10 total)
     const sectionsToScan = sectionLinks.slice(0, 10)
-    for (const section of sectionsToScan) {
-      try {
-        const html = await fetchPage(section.url)
-        const topics = extractTopicsFromSection(html)
-        if (topics.length > 0) {
-          sections.push({ name: section.name, url: section.url, topics })
+
+    for (let i = 0; i < sectionsToScan.length; i += 5) {
+      const batch = sectionsToScan.slice(i, i + 5)
+      const results = await Promise.allSettled(
+        batch.map(async (section) => {
+          const html = await fetchPage(section.url)
+          const topics = extractTopicsFromSection(html)
+          return { name: section.name, url: section.url, topics }
+        })
+      )
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value.topics.length > 0) {
+          sections.push(r.value)
         }
-      } catch {
-        // Skip failed sections
       }
     }
 
     // Step 5: Aggregate
-    const thirtyDaysAgo = NOW - 30 * DAY
-    const sevenDaysAgo = NOW - 7 * DAY
+    const now = Date.now()
+    const thirtyDaysAgo = now - 30 * DAY
+    const sevenDaysAgo = now - 7 * DAY
 
     let totalTopics = 0
     let totalReplies = 0
@@ -403,7 +409,6 @@ export async function POST(request: NextRequest) {
     let topicsLast7 = 0
     let repliesLast7 = 0
 
-    // Deduplicate topics by title across sections
     const seenTitles = new Set<string>()
 
     for (const section of sections) {
@@ -426,7 +431,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Clean sections for response (limit topic details to save bandwidth)
     const cleanSections = sections.map(s => ({
       name: s.name,
       url: s.url,

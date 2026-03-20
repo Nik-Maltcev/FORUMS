@@ -62,6 +62,35 @@ export default function ActivityPage() {
       .filter((u) => u.length > 0)
       .map((u) => (u.startsWith("http") ? u : `https://${u}`))
 
+  const checkOne = async (url: string, i: number) => {
+    setResults((prev) => prev.map((r, idx) => (idx === i ? { ...r, status: "checking" } : r)))
+    try {
+      const res = await fetch("/api/check-activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      })
+      const data: ActivityResult = await res.json()
+      if (data.error) {
+        setResults((prev) =>
+          prev.map((r, idx) => (idx === i ? { ...r, status: "error", result: data } : r))
+        )
+      } else {
+        setResults((prev) =>
+          prev.map((r, idx) => (idx === i ? { ...r, status: "done", result: data, verdict: getVerdict(data) } : r))
+        )
+      }
+    } catch {
+      setResults((prev) =>
+        prev.map((r, idx) =>
+          idx === i
+            ? { ...r, status: "error", result: { totalTopics: 0, totalReplies: 0, topicsLast30Days: 0, repliesLast30Days: 0, topicsLast7Days: 0, repliesLast7Days: 0, sectionsScanned: 0, sections: [], error: "Не удалось выполнить запрос" } as ActivityResult, verdict: "ошибка" as Verdict }
+            : r
+        )
+      )
+    }
+  }
+
   const handleCheck = async () => {
     const urls = parseUrls(input)
     if (urls.length === 0) return
@@ -70,37 +99,12 @@ export default function ActivityPage() {
     setActiveFilter(null)
     setResults(urls.map((url) => ({ url, status: "pending" })))
 
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i]
-      setResults((prev) => prev.map((r, idx) => (idx === i ? { ...r, status: "checking" } : r)))
-
-      try {
-        const res = await fetch("/api/check-activity", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
-        })
-        const data: ActivityResult = await res.json()
-
-        if (data.error) {
-          setResults((prev) =>
-            prev.map((r, idx) => (idx === i ? { ...r, status: "error", result: data } : r))
-          )
-        } else {
-          setResults((prev) =>
-            prev.map((r, idx) => (idx === i ? { ...r, status: "done", result: data, verdict: getVerdict(data) } : r))
-          )
-        }
-      } catch {
-        setResults((prev) =>
-          prev.map((r, idx) =>
-            idx === i
-              ? { ...r, status: "error", result: { totalTopics: 0, totalReplies: 0, topicsLast30Days: 0, repliesLast30Days: 0, topicsLast7Days: 0, repliesLast7Days: 0, sectionsScanned: 0, sections: [], error: "Не удалось выполнить запрос" } as ActivityResult, verdict: "ошибка" as Verdict }
-              : r
-          )
-        )
-      }
+    // Process 3 forums in parallel
+    for (let i = 0; i < urls.length; i += 3) {
+      const batch = urls.slice(i, i + 3)
+      await Promise.allSettled(batch.map((url, j) => checkOne(url, i + j)))
     }
+
     setIsChecking(false)
   }
 
