@@ -3,35 +3,57 @@
 import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
-import { AlertCircle, Loader2, Download, Activity, Eye, EyeOff, X } from "lucide-react"
+import { AlertCircle, Loader2, Download, Activity, X, ChevronDown, ChevronUp } from "lucide-react"
+
+interface TopicInfo {
+  title: string
+  replies: number
+  lastPostDate?: string
+}
+
+interface SectionInfo {
+  name: string
+  url: string
+  topics: TopicInfo[]
+}
 
 interface ActivityResult {
-  activityLevel: "высокая" | "средняя" | "низкая" | "мёртвый"
-  postsPerWeek: string
-  uniqueAuthors: string
-  contentQuality: string
-  dateSpread: string
-  verdict: string
+  totalTopics: number
+  totalReplies: number
+  topicsLast30Days: number
+  repliesLast30Days: number
+  topicsLast7Days: number
+  repliesLast7Days: number
+  sectionsScanned: number
+  sections: SectionInfo[]
   error?: string
 }
+
+type Verdict = "активный" | "средний" | "слабый" | "мёртвый" | "ошибка"
 
 interface ForumActivityResult {
   url: string
   status: "pending" | "checking" | "done" | "error"
   result?: ActivityResult
+  verdict?: Verdict
+  expanded?: boolean
+}
+
+function getVerdict(r: ActivityResult): Verdict {
+  if (r.repliesLast30Days >= 100) return "активный"
+  if (r.repliesLast30Days >= 20) return "средний"
+  if (r.repliesLast30Days >= 1) return "слабый"
+  return "мёртвый"
 }
 
 export default function ActivityPage() {
   const [input, setInput] = useState("")
-  const [apiKey, setApiKey] = useState("")
-  const [showKey, setShowKey] = useState(false)
   const [results, setResults] = useState<ForumActivityResult[]>([])
   const [isChecking, setIsChecking] = useState(false)
-  const [activeFilter, setActiveFilter] = useState<string | null>(null)
+  const [activeFilter, setActiveFilter] = useState<Verdict | null>(null)
 
   const parseUrls = (text: string): string[] =>
     text
@@ -42,7 +64,7 @@ export default function ActivityPage() {
 
   const handleCheck = async () => {
     const urls = parseUrls(input)
-    if (urls.length === 0 || !apiKey.trim()) return
+    if (urls.length === 0) return
 
     setIsChecking(true)
     setActiveFilter(null)
@@ -56,7 +78,7 @@ export default function ActivityPage() {
         const res = await fetch("/api/check-activity", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, apiKey: apiKey.trim() }),
+          body: JSON.stringify({ url }),
         })
         const data: ActivityResult = await res.json()
 
@@ -66,28 +88,31 @@ export default function ActivityPage() {
           )
         } else {
           setResults((prev) =>
-            prev.map((r, idx) => (idx === i ? { ...r, status: "done", result: data } : r))
+            prev.map((r, idx) => (idx === i ? { ...r, status: "done", result: data, verdict: getVerdict(data) } : r))
           )
         }
       } catch {
         setResults((prev) =>
           prev.map((r, idx) =>
             idx === i
-              ? { ...r, status: "error", result: { activityLevel: "мёртвый", postsPerWeek: "0", uniqueAuthors: "0", contentQuality: "", dateSpread: "", verdict: "", error: "Не удалось выполнить запрос" } }
+              ? { ...r, status: "error", result: { totalTopics: 0, totalReplies: 0, topicsLast30Days: 0, repliesLast30Days: 0, topicsLast7Days: 0, repliesLast7Days: 0, sectionsScanned: 0, sections: [], error: "Не удалось выполнить запрос" } as ActivityResult, verdict: "ошибка" as Verdict }
               : r
           )
         )
       }
     }
-
     setIsChecking(false)
   }
 
-  const activityLevels = useMemo(() => {
+  const toggleExpand = (idx: number) => {
+    setResults((prev) => prev.map((r, i) => (i === idx ? { ...r, expanded: !r.expanded } : r)))
+  }
+
+  const verdictCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const r of results) {
-      if (r.status === "done" && r.result?.activityLevel) {
-        counts[r.result.activityLevel] = (counts[r.result.activityLevel] || 0) + 1
+      if (r.verdict && r.verdict !== "ошибка") {
+        counts[r.verdict] = (counts[r.verdict] || 0) + 1
       }
     }
     return Object.entries(counts).sort((a, b) => b[1] - a[1])
@@ -95,22 +120,20 @@ export default function ActivityPage() {
 
   const filteredResults = useMemo(() => {
     if (!activeFilter) return results
-    return results.filter(
-      (r) => r.status === "done" && r.result?.activityLevel === activeFilter
-    )
+    return results.filter((r) => r.verdict === activeFilter)
   }, [results, activeFilter])
 
-  const getActivityColor = (level?: string) => {
-    if (level === "высокая") return "bg-green-500/10 text-green-600 border-green-500/20"
-    if (level === "средняя") return "bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
-    if (level === "низкая") return "bg-orange-500/10 text-orange-600 border-orange-500/20"
+  const getVerdictColor = (v?: string) => {
+    if (v === "активный") return "bg-green-500/10 text-green-600 border-green-500/20"
+    if (v === "средний") return "bg-yellow-500/10 text-yellow-600 border-yellow-500/20"
+    if (v === "слабый") return "bg-orange-500/10 text-orange-600 border-orange-500/20"
     return "bg-red-500/10 text-red-600 border-red-500/20"
   }
 
-  const getActivityEmoji = (level?: string) => {
-    if (level === "высокая") return "🟢"
-    if (level === "средняя") return "🟡"
-    if (level === "низкая") return "🟠"
+  const getVerdictEmoji = (v?: string) => {
+    if (v === "активный") return "🟢"
+    if (v === "средний") return "🟡"
+    if (v === "слабый") return "🟠"
     return "🔴"
   }
 
@@ -119,7 +142,7 @@ export default function ActivityPage() {
     if (done.length === 0) return
 
     const bom = "\uFEFF"
-    const headers = ["URL", "Активность", "Постов/неделю", "Уникальных авторов", "Качество контента", "Вердикт", "Ошибка"]
+    const headers = ["URL", "Вердикт", "Всего тем", "Всего сообщений", "Тем за 30д", "Сообщений за 30д", "Тем за 7д", "Сообщений за 7д", "Разделов", "Ошибка"]
     const escCsv = (val: string) =>
       val.includes(";") || val.includes('"') || val.includes("\n")
         ? `"${val.replace(/"/g, '""')}"`
@@ -128,23 +151,26 @@ export default function ActivityPage() {
     const rows = done.map((r) =>
       [
         escCsv(r.url),
-        escCsv(r.result?.activityLevel || ""),
-        escCsv(r.result?.postsPerWeek || ""),
-        escCsv(r.result?.uniqueAuthors || ""),
-        escCsv(r.result?.contentQuality || ""),
-        escCsv(r.result?.verdict || ""),
+        escCsv(r.verdict || ""),
+        String(r.result?.totalTopics ?? ""),
+        String(r.result?.totalReplies ?? ""),
+        String(r.result?.topicsLast30Days ?? ""),
+        String(r.result?.repliesLast30Days ?? ""),
+        String(r.result?.topicsLast7Days ?? ""),
+        String(r.result?.repliesLast7Days ?? ""),
+        String(r.result?.sectionsScanned ?? ""),
         escCsv(r.result?.error || ""),
       ].join(";")
     )
 
     const csv = bom + headers.map(escCsv).join(";") + "\n" + rows.join("\n")
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
+    const csvUrl = URL.createObjectURL(blob)
     const a = document.createElement("a")
-    a.href = url
+    a.href = csvUrl
     a.download = `forum-activity-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
-    URL.revokeObjectURL(url)
+    URL.revokeObjectURL(csvUrl)
   }
 
   const doneCount = results.filter((r) => r.status === "done").length
@@ -154,43 +180,13 @@ export default function ActivityPage() {
       <div className="mx-auto max-w-4xl space-y-8">
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">Проверка целостности форумов</h1>
-          <p className="text-muted-foreground">AI-анализ реальной активности: где люди общаются, а где форум заброшен</p>
+          <p className="text-muted-foreground">Краулинг разделов форума и подсчёт сообщений за 30 дней</p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Настройки</CardTitle>
-            <CardDescription>
-              Получите бесплатный API ключ на{" "}
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                aistudio.google.com
-              </a>
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="relative">
-              <Input
-                type={showKey ? "text" : "password"}
-                placeholder="Gemini API Key"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="pr-10 font-mono text-sm"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
             <CardTitle className="text-lg">Список форумов</CardTitle>
-            <CardDescription>Один URL на строку или через запятую</CardDescription>
+            <CardDescription>Один URL на строку или через запятую. Для каждого форума будут просканированы разделы (до 10).</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Textarea
@@ -201,13 +197,13 @@ export default function ActivityPage() {
             />
             <Button
               onClick={handleCheck}
-              disabled={isChecking || !input.trim() || !apiKey.trim()}
+              disabled={isChecking || !input.trim()}
               className="w-full sm:w-auto"
             >
               {isChecking ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Анализирую активность...
+                  Сканирую разделы...
                 </>
               ) : (
                 <>
@@ -238,8 +234,7 @@ export default function ActivityPage() {
               )}
             </div>
 
-            {/* Activity level filter chips */}
-            {activityLevels.length > 1 && (
+            {verdictCounts.length > 1 && (
               <div className="flex flex-wrap gap-2">
                 {activeFilter && (
                   <button
@@ -250,17 +245,17 @@ export default function ActivityPage() {
                     Сбросить
                   </button>
                 )}
-                {activityLevels.map(([level, count]) => (
+                {verdictCounts.map(([v, count]) => (
                   <button
-                    key={level}
-                    onClick={() => setActiveFilter(activeFilter === level ? null : level)}
+                    key={v}
+                    onClick={() => setActiveFilter(activeFilter === v ? null : v as Verdict)}
                     className={`rounded-full border px-3 py-1 text-sm transition-colors ${
-                      activeFilter === level
+                      activeFilter === v
                         ? "bg-primary text-primary-foreground border-primary"
                         : "bg-background hover:bg-muted"
                     }`}
                   >
-                    {getActivityEmoji(level)} {level} <span className="opacity-60">{count}</span>
+                    {getVerdictEmoji(v)} {v} <span className="opacity-60">{count}</span>
                   </button>
                 ))}
               </div>
@@ -279,20 +274,17 @@ export default function ActivityPage() {
                       >
                         {result.url}
                       </a>
-
                       <div className="flex items-center gap-2 shrink-0">
                         {result.status === "checking" && (
                           <Badge variant="secondary" className="gap-1">
                             <Spinner className="h-3 w-3" />
-                            Анализ
+                            Сканирую
                           </Badge>
                         )}
-                        {result.status === "pending" && (
-                          <Badge variant="outline">Ожидание</Badge>
-                        )}
-                        {result.status === "done" && result.result && (
-                          <Badge className={getActivityColor(result.result.activityLevel)}>
-                            {getActivityEmoji(result.result.activityLevel)} {result.result.activityLevel}
+                        {result.status === "pending" && <Badge variant="outline">Ожидание</Badge>}
+                        {result.status === "done" && result.verdict && (
+                          <Badge className={getVerdictColor(result.verdict)}>
+                            {getVerdictEmoji(result.verdict)} {result.verdict}
                           </Badge>
                         )}
                         {result.status === "error" && (
@@ -305,26 +297,56 @@ export default function ActivityPage() {
                     </div>
 
                     {result.status === "done" && result.result && (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                           <div className="rounded-lg border p-2.5">
-                            <div className="text-xs text-muted-foreground">Постов/неделю</div>
-                            <div className="text-sm font-medium">{result.result.postsPerWeek}</div>
+                            <div className="text-xs text-muted-foreground">Сообщений за 30д</div>
+                            <div className="text-lg font-semibold">{result.result.repliesLast30Days.toLocaleString()}</div>
                           </div>
                           <div className="rounded-lg border p-2.5">
-                            <div className="text-xs text-muted-foreground">Уникальных авторов</div>
-                            <div className="text-sm font-medium">{result.result.uniqueAuthors}</div>
+                            <div className="text-xs text-muted-foreground">Сообщений за 7д</div>
+                            <div className="text-lg font-semibold">{result.result.repliesLast7Days.toLocaleString()}</div>
                           </div>
                           <div className="rounded-lg border p-2.5">
-                            <div className="text-xs text-muted-foreground">Разброс дат</div>
-                            <div className="text-sm font-medium">{result.result.dateSpread}</div>
+                            <div className="text-xs text-muted-foreground">Активных тем за 30д</div>
+                            <div className="text-lg font-semibold">{result.result.topicsLast30Days}</div>
                           </div>
                           <div className="rounded-lg border p-2.5">
-                            <div className="text-xs text-muted-foreground">Качество контента</div>
-                            <div className="text-sm font-medium">{result.result.contentQuality}</div>
+                            <div className="text-xs text-muted-foreground">Разделов</div>
+                            <div className="text-lg font-semibold">{result.result.sectionsScanned}</div>
                           </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">{result.result.verdict}</p>
+
+                        <div className="text-xs text-muted-foreground">
+                          Всего найдено: {result.result.totalTopics} тем, {result.result.totalReplies.toLocaleString()} сообщений
+                        </div>
+
+                        {result.result.sections.length > 0 && (
+                          <button
+                            onClick={() => toggleExpand(idx)}
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {result.expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            {result.expanded ? "Скрыть" : "Показать"} разделы и темы
+                          </button>
+                        )}
+
+                        {result.expanded && result.result.sections.map((section, sIdx) => (
+                          <div key={sIdx} className="rounded-lg border p-3 space-y-2">
+                            <div className="text-sm font-medium">{section.name}</div>
+                            <div className="space-y-1">
+                              {section.topics.map((topic, tIdx) => (
+                                <div key={tIdx} className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="truncate text-muted-foreground">{topic.title}</span>
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    <span className="font-mono">{topic.replies} отв.</span>
+                                    {topic.lastPostDate && <span className="text-muted-foreground">{topic.lastPostDate}</span>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
 
