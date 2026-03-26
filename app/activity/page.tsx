@@ -26,13 +26,12 @@ interface SectionInfo { name: string; url: string; topics: TopicInfo[] }
 interface ActivityResult {
   engine: string
   totalTopics: number
-  totalReplies: number
-  topicsThisYear: number
-  repliesThisYear: number
-  topicsLast30Days: number
-  repliesLast30Days: number
+  topicsToday: number
+  topicsLast3Days: number
   topicsLast7Days: number
-  repliesLast7Days: number
+  topicsLast30Days: number
+  topicsThisYear: number
+  latestPostDate?: string
   sectionsScanned: number
   sections: SectionInfo[]
   error?: string
@@ -49,14 +48,10 @@ interface ForumResult {
 }
 
 function getVerdict(r: ActivityResult): Verdict {
-  // Primary: replies this year
-  if (r.repliesThisYear >= 500) return "активный"
-  if (r.repliesThisYear >= 50) return "средний"
-  if (r.repliesThisYear >= 1) return "слабый"
-  // Fallback: if no year data, check 30d
-  if (r.repliesLast30Days >= 100) return "активный"
-  if (r.repliesLast30Days >= 10) return "средний"
-  if (r.repliesLast30Days >= 1) return "слабый"
+  if (r.topicsLast3Days >= 3) return "активный"
+  if (r.topicsLast7Days >= 3) return "средний"
+  if (r.topicsLast30Days >= 3) return "слабый"
+  if (r.topicsThisYear >= 1) return "слабый"
   return "мёртвый"
 }
 
@@ -86,7 +81,7 @@ export default function ActivityPage() {
       }
     } catch {
       setResults(prev => prev.map((r, idx) => idx === i
-        ? { ...r, status: "error", result: { engine: "unknown", totalTopics: 0, totalReplies: 0, topicsThisYear: 0, repliesThisYear: 0, topicsLast30Days: 0, repliesLast30Days: 0, topicsLast7Days: 0, repliesLast7Days: 0, sectionsScanned: 0, sections: [], error: "Не удалось выполнить запрос" }, verdict: "ошибка" as Verdict }
+        ? { ...r, status: "error", result: { engine: "unknown", totalTopics: 0, topicsToday: 0, topicsLast3Days: 0, topicsLast7Days: 0, topicsLast30Days: 0, topicsThisYear: 0, sectionsScanned: 0, sections: [], error: "Не удалось выполнить запрос" }, verdict: "ошибка" as Verdict }
         : r))
     }
   }
@@ -136,14 +131,17 @@ export default function ActivityPage() {
     const done = results.filter(r => r.status === "done" || r.status === "error")
     if (!done.length) return
     const bom = "\uFEFF"
-    const h = ["URL", "Движок", "Вердикт", "Всего тем", "Всего сообщ.", "Тем за год", "Сообщ. за год", "Тем за 30д", "Сообщ. за 30д", "Тем за 7д", "Сообщ. за 7д", "Разделов", "Ошибка"]
+    const h = ["URL", "Движок", "Вердикт", "Всего тем", "Сегодня", "За 3 дня", "За 7 дней", "За 30 дней", "За год", "Последний пост", "Разделов", "Ошибка"]
     const esc = (v: string) => v.includes(";") || v.includes('"') || v.includes("\n") ? `"${v.replace(/"/g, '""')}"` : v
     const rows = done.map(r => [
       esc(r.url), esc(r.result?.engine || ""), esc(r.verdict || ""),
-      String(r.result?.totalTopics ?? ""), String(r.result?.totalReplies ?? ""),
-      String(r.result?.topicsThisYear ?? ""), String(r.result?.repliesThisYear ?? ""),
-      String(r.result?.topicsLast30Days ?? ""), String(r.result?.repliesLast30Days ?? ""),
-      String(r.result?.topicsLast7Days ?? ""), String(r.result?.repliesLast7Days ?? ""),
+      String(r.result?.totalTopics ?? ""),
+      String(r.result?.topicsToday ?? ""),
+      String(r.result?.topicsLast3Days ?? ""),
+      String(r.result?.topicsLast7Days ?? ""),
+      String(r.result?.topicsLast30Days ?? ""),
+      String(r.result?.topicsThisYear ?? ""),
+      esc(r.result?.latestPostDate || ""),
       String(r.result?.sectionsScanned ?? ""), esc(r.result?.error || ""),
     ].join(";"))
     const csv = bom + h.map(esc).join(";") + "\n" + rows.join("\n")
@@ -161,7 +159,7 @@ export default function ActivityPage() {
       <div className="mx-auto max-w-4xl space-y-8">
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">Проверка целостности форумов</h1>
-          <p className="text-muted-foreground">Краулинг разделов, подсчёт сообщений за год / 30д / 7д. Движки: XenForo, phpBB, vBulletin, IPB.</p>
+          <p className="text-muted-foreground">Считаем темы с недавними постами. 3+ темы за 3 дня = живой форум.</p>
         </div>
 
         <Card>
@@ -257,31 +255,29 @@ export default function ActivityPage() {
 
                     {r.status === "done" && r.result && (
                       <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                          <div className="rounded-lg border p-2.5">
-                            <div className="text-xs text-muted-foreground">За {new Date().getFullYear()} год</div>
-                            <div className="text-lg font-semibold">{r.result.repliesThisYear.toLocaleString()}</div>
-                            <div className="text-xs text-muted-foreground">{r.result.topicsThisYear} тем</div>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          <div className="rounded-lg border p-2.5 bg-primary/5">
+                            <div className="text-xs text-muted-foreground">Тем за 3 дня</div>
+                            <div className="text-2xl font-bold">{r.result.topicsLast3Days}</div>
                           </div>
                           <div className="rounded-lg border p-2.5">
-                            <div className="text-xs text-muted-foreground">За 30 дней</div>
-                            <div className="text-lg font-semibold">{r.result.repliesLast30Days.toLocaleString()}</div>
-                            <div className="text-xs text-muted-foreground">{r.result.topicsLast30Days} тем</div>
+                            <div className="text-xs text-muted-foreground">Сегодня</div>
+                            <div className="text-lg font-semibold">{r.result.topicsToday}</div>
                           </div>
                           <div className="rounded-lg border p-2.5">
                             <div className="text-xs text-muted-foreground">За 7 дней</div>
-                            <div className="text-lg font-semibold">{r.result.repliesLast7Days.toLocaleString()}</div>
-                            <div className="text-xs text-muted-foreground">{r.result.topicsLast7Days} тем</div>
+                            <div className="text-lg font-semibold">{r.result.topicsLast7Days}</div>
                           </div>
                           <div className="rounded-lg border p-2.5">
-                            <div className="text-xs text-muted-foreground">Всего</div>
-                            <div className="text-lg font-semibold">{r.result.totalReplies.toLocaleString()}</div>
-                            <div className="text-xs text-muted-foreground">{r.result.totalTopics} тем</div>
+                            <div className="text-xs text-muted-foreground">За 30 дней</div>
+                            <div className="text-lg font-semibold">{r.result.topicsLast30Days}</div>
                           </div>
-                          <div className="rounded-lg border p-2.5">
-                            <div className="text-xs text-muted-foreground">Разделов</div>
-                            <div className="text-lg font-semibold">{r.result.sectionsScanned}</div>
-                          </div>
+                        </div>
+                        <div className="flex gap-4 text-xs text-muted-foreground">
+                          <span>Всего тем: {r.result.totalTopics}</span>
+                          <span>За {new Date().getFullYear()}: {r.result.topicsThisYear}</span>
+                          <span>Разделов: {r.result.sectionsScanned}</span>
+                          {r.result.latestPostDate && <span>Последний пост: {r.result.latestPostDate}</span>}
                         </div>
 
                         {r.result.sections.length > 0 && (

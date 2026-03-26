@@ -18,13 +18,12 @@ interface SectionInfo {
 interface ActivityResult {
   engine: string
   totalTopics: number
-  totalReplies: number
-  topicsThisYear: number
-  repliesThisYear: number
-  topicsLast30Days: number
-  repliesLast30Days: number
+  topicsToday: number
+  topicsLast3Days: number
   topicsLast7Days: number
-  repliesLast7Days: number
+  topicsLast30Days: number
+  topicsThisYear: number
+  latestPostDate?: string
   sectionsScanned: number
   sections: SectionInfo[]
   error?: string
@@ -567,16 +566,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 5: Aggregate
+    // Step 5: Aggregate — count topics by last post date
     const now = Date.now()
-    const yearStart = new Date(new Date().getFullYear(), 0, 1).getTime()
-    const thirtyDaysAgo = now - 30 * DAY
+    const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime()
+    const threeDaysAgo = now - 3 * DAY
     const sevenDaysAgo = now - 7 * DAY
+    const thirtyDaysAgo = now - 30 * DAY
+    const yearStart = new Date(new Date().getFullYear(), 0, 1).getTime()
 
-    let totalTopics = 0, totalReplies = 0
-    let topicsYear = 0, repliesYear = 0
-    let topics30 = 0, replies30 = 0
-    let topics7 = 0, replies7 = 0
+    let totalTopics = 0
+    let topicsToday = 0, topics3d = 0, topics7d = 0, topics30d = 0, topicsYear = 0
+    let latestTs = 0
+    let latestDateStr: string | undefined
     const seen = new Set<string>()
 
     for (const sec of sections) {
@@ -585,24 +586,31 @@ export async function POST(request: NextRequest) {
         if (seen.has(key)) continue
         seen.add(key)
         totalTopics++
-        totalReplies += t.replies
-        if (t.lastPostTimestamp && t.lastPostTimestamp >= yearStart) { topicsYear++; repliesYear += t.replies }
-        if (t.lastPostTimestamp && t.lastPostTimestamp >= thirtyDaysAgo) { topics30++; replies30 += t.replies }
-        if (t.lastPostTimestamp && t.lastPostTimestamp >= sevenDaysAgo) { topics7++; replies7 += t.replies }
+        if (t.lastPostTimestamp) {
+          if (t.lastPostTimestamp > latestTs) { latestTs = t.lastPostTimestamp; latestDateStr = t.lastPostDate }
+          if (t.lastPostTimestamp >= todayStart) topicsToday++
+          if (t.lastPostTimestamp >= threeDaysAgo) topics3d++
+          if (t.lastPostTimestamp >= sevenDaysAgo) topics7d++
+          if (t.lastPostTimestamp >= thirtyDaysAgo) topics30d++
+          if (t.lastPostTimestamp >= yearStart) topicsYear++
+        }
       }
     }
 
     const cleanSections = sections.map(s => ({
       name: s.name, url: s.url,
-      topics: s.topics.slice(0, 20).map(t => ({ title: t.title, replies: t.replies, lastPostDate: t.lastPostDate })),
+      topics: s.topics.slice(0, 30).map(t => ({ title: t.title, replies: t.replies, lastPostDate: t.lastPostDate })),
     }))
 
     const result: ActivityResult = {
       engine,
-      totalTopics, totalReplies,
-      topicsThisYear: topicsYear, repliesThisYear: repliesYear,
-      topicsLast30Days: topics30, repliesLast30Days: replies30,
-      topicsLast7Days: topics7, repliesLast7Days: replies7,
+      totalTopics,
+      topicsToday,
+      topicsLast3Days: topics3d,
+      topicsLast7Days: topics7d,
+      topicsLast30Days: topics30d,
+      topicsThisYear: topicsYear,
+      latestPostDate: latestDateStr,
       sectionsScanned: sections.length,
       sections: cleanSections as SectionInfo[],
     }
