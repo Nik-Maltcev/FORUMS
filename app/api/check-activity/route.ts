@@ -419,19 +419,22 @@ function extractTopics(html: string, engine: Engine, lang: Lang): TopicInfo[] {
       const pm = row.match(REPLY_DL_RE)
       if (pm) { replies = parseCount(pm[1]) }
       else {
-        // phpBB often has replies in a dd or span with class "posts"
         const postsMatch = row.match(/class="[^"]*(?:posts|replies)[^"]*"[^>]*>[\s]*(\d[\d,.']*)/i)
         if (postsMatch) replies = parseCount(postsMatch[1])
         else {
-          // Fallback: numbers in <dd> tags
           const ddNums = row.match(/<dd[^>]*>\s*(\d[\d,.']*)\s*<\/dd>/gi) || []
           const nums = ddNums.map(dd => { const n = dd.match(/(\d[\d,.']*)/)?.[1]; return n ? parseCount(n) : 0 }).filter(n => n > 0)
           if (nums.length >= 1) replies = nums[0]
         }
       }
 
+      // phpBB: ONLY use date from lastpost block — never from the whole row
+      // (the row may contain the topic creation date or page header date)
+      let dateInfo: { dateStr?: string; timestamp?: number } = {}
       const lastPostBlock = row.match(/class="[^"]*(?:last[-_]?post|lastpost|latest)[^"]*"[^>]*>([\s\S]{0,600})/i)
-      const dateInfo = lastPostBlock ? extractDateFromBlock(lastPostBlock[1], lang) : extractDateFromBlock(row, lang)
+      if (lastPostBlock) {
+        dateInfo = extractDateFromBlock(lastPostBlock[1], lang)
+      }
 
       topics.push({ title, replies, lastPostDate: dateInfo.dateStr, lastPostTimestamp: dateInfo.timestamp })
     }
@@ -459,8 +462,10 @@ function extractTopics(html: string, engine: Engine, lang: Lang): TopicInfo[] {
         if (nums.length >= 1) replies = nums[0]
       }
 
+      // vB: date ONLY from lastpost block
+      let dateInfo: { dateStr?: string; timestamp?: number } = {}
       const lastPostBlock = row.match(/class="[^"]*(?:last[-_]?post|lastpost)[^"]*"[^>]*>([\s\S]{0,600})/i)
-      const dateInfo = lastPostBlock ? extractDateFromBlock(lastPostBlock[1], lang) : extractDateFromBlock(row, lang)
+      if (lastPostBlock) dateInfo = extractDateFromBlock(lastPostBlock[1], lang)
 
       topics.push({ title, replies, lastPostDate: dateInfo.dateStr, lastPostTimestamp: dateInfo.timestamp })
     }
