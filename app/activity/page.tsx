@@ -236,7 +236,7 @@ export default function ActivityPage() {
 
             <div className="space-y-3">
               {filtered.map((r, idx) => (
-                <Card key={idx}>
+                <Card key={idx} className={r.status === "done" && r.result && r.result.topicsThisYear > 0 ? "ring-2 ring-green-500/40 bg-green-500/[0.03]" : ""}>
                   <div className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
@@ -275,7 +275,7 @@ export default function ActivityPage() {
                         </div>
                         <div className="flex gap-4 text-xs text-muted-foreground">
                           <span>Всего тем: {r.result.totalTopics}</span>
-                          <span>За {new Date().getFullYear()}: {r.result.topicsThisYear}</span>
+                          <span className={r.result.topicsThisYear > 0 ? "text-green-600 font-medium" : ""}>За {new Date().getFullYear()}: {r.result.topicsThisYear}</span>
                           <span>Разделов: {r.result.sectionsScanned}</span>
                           {r.result.latestPostDate && <span>Последний пост: {r.result.latestPostDate}</span>}
                         </div>
