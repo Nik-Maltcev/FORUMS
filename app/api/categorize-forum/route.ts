@@ -60,47 +60,47 @@ export async function POST(request: NextRequest) {
     const langConfig: Record<string, { acceptLang: string; categories: string; promptLang: string }> = {
       ru: {
         acceptLang: "ru,en;q=0.5",
-        categories: "Авто | IT и технологии | Здоровье и медицина | Спорт | Кулинария | Животные | Путешествия | Недвижимость | Финансы и инвестиции | Образование | Игры | Мода и красота | Сад и огород | Строительство и ремонт | Охота и рыбалка | Материнство и дети | Бизнес | Музыка | Кино и сериалы | Политика | Наука | Религия | Юридические вопросы | Общение | Другое",
+        categories: "Инвестиции | Путешествия/туризм | Торговля | Авто | Психология/отношения | Ставки/казино | Бизнес/карьера | Образование | Политика | Новости | Другое",
         promptLang: "русский",
       },
       en: {
         acceptLang: "en,en-US;q=0.9",
-        categories: "Auto | IT & Technology | Health & Medicine | Sports | Cooking | Pets & Animals | Travel | Real Estate | Finance & Investing | Education | Gaming | Fashion & Beauty | Gardening | Construction & Renovation | Hunting & Fishing | Parenting | Business | Music | Movies & TV | Politics | Science | Religion | Legal | General Discussion | Other",
+        categories: "Investments | Travel/Tourism | Trading | Auto | Psychology/Relationships | Gambling/Casino | Business/Career | Education | Politics | News | Other",
         promptLang: "английский",
       },
       de: {
         acceptLang: "de,en;q=0.5",
-        categories: "Auto | IT & Technologie | Gesundheit & Medizin | Sport | Kochen | Tiere | Reisen | Immobilien | Finanzen & Investitionen | Bildung | Spiele | Mode & Schönheit | Garten | Bauen & Renovieren | Jagd & Angeln | Elternschaft | Business | Musik | Film & Serien | Politik | Wissenschaft | Religion | Recht | Allgemeine Diskussion | Sonstiges",
+        categories: "Investitionen | Reisen/Tourismus | Handel | Auto | Psychologie/Beziehungen | Glücksspiel/Casino | Business/Karriere | Bildung | Politik | Nachrichten | Sonstiges",
         promptLang: "немецкий",
       },
       fr: {
         acceptLang: "fr,en;q=0.5",
-        categories: "Auto | IT & Technologie | Santé & Médecine | Sport | Cuisine | Animaux | Voyages | Immobilier | Finance & Investissement | Éducation | Jeux | Mode & Beauté | Jardinage | Construction & Rénovation | Chasse & Pêche | Parentalité | Business | Musique | Cinéma & Séries | Politique | Science | Religion | Juridique | Discussion Générale | Autre",
+        categories: "Investissements | Voyages/Tourisme | Commerce | Auto | Psychologie/Relations | Paris/Casino | Business/Carrière | Éducation | Politique | Actualités | Autre",
         promptLang: "французский",
       },
       es: {
         acceptLang: "es,en;q=0.5",
-        categories: "Auto | IT y Tecnología | Salud y Medicina | Deportes | Cocina | Animales | Viajes | Inmobiliaria | Finanzas e Inversiones | Educación | Juegos | Moda y Belleza | Jardinería | Construcción y Renovación | Caza y Pesca | Maternidad | Negocios | Música | Cine y Series | Política | Ciencia | Religión | Legal | Discusión General | Otro",
+        categories: "Inversiones | Viajes/Turismo | Comercio | Auto | Psicología/Relaciones | Apuestas/Casino | Negocios/Carrera | Educación | Política | Noticias | Otro",
         promptLang: "испанский",
       },
       it: {
         acceptLang: "it,en;q=0.5",
-        categories: "Auto | IT e Tecnologia | Salute e Medicina | Sport | Cucina | Animali | Viaggi | Immobiliare | Finanza e Investimenti | Istruzione | Giochi | Moda e Bellezza | Giardinaggio | Costruzione e Ristrutturazione | Caccia e Pesca | Genitorialità | Business | Musica | Cinema e Serie TV | Politica | Scienza | Religione | Legale | Discussione Generale | Altro",
+        categories: "Investimenti | Viaggi/Turismo | Commercio | Auto | Psicologia/Relazioni | Scommesse/Casino | Business/Carriera | Istruzione | Politica | Notizie | Altro",
         promptLang: "итальянский",
       },
       cs: {
         acceptLang: "cs,en;q=0.5",
-        categories: "Auto | IT a Technologie | Zdraví a Medicína | Sport | Vaření | Zvířata | Cestování | Nemovitosti | Finance a Investice | Vzdělávání | Hry | Móda a Krása | Zahradničení | Stavba a Renovace | Lov a Rybaření | Rodičovství | Business | Hudba | Film a Seriály | Politika | Věda | Náboženství | Právo | Obecná Diskuse | Jiné",
+        categories: "Investice | Cestování/Turismus | Obchod | Auto | Psychologie/Vztahy | Sázky/Casino | Business/Kariéra | Vzdělávání | Politika | Zprávy | Jiné",
         promptLang: "чешский",
       },
       nl: {
         acceptLang: "nl,en;q=0.5",
-        categories: "Auto | IT & Technologie | Gezondheid & Geneeskunde | Sport | Koken | Dieren | Reizen | Vastgoed | Financiën & Beleggen | Onderwijs | Games | Mode & Beauty | Tuinieren | Bouw & Renovatie | Jacht & Vissen | Ouderschap | Business | Muziek | Film & Series | Politiek | Wetenschap | Religie | Juridisch | Algemene Discussie | Overig",
+        categories: "Investeringen | Reizen/Toerisme | Handel | Auto | Psychologie/Relaties | Gokken/Casino | Business/Carrière | Onderwijs | Politiek | Nieuws | Overig",
         promptLang: "нидерландский",
       },
       tr: {
         acceptLang: "tr,en;q=0.5",
-        categories: "Turizm | Ticaret | Другое",
+        categories: "Yatırım | Turizm | Ticaret | Otomobil | Psikoloji/İlişkiler | Bahis/Casino | İş/Kariyer | Eğitim | Politika | Haberler | Diğer",
         promptLang: "турецкий",
       },
     }
