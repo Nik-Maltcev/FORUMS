@@ -51,10 +51,61 @@ function extractPageMeta(html: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const { url, apiKey } = await request.json()
+    const { url, apiKey, lang = "ru" } = await request.json()
 
     if (!url) return NextResponse.json({ error: "URL is required" }, { status: 400 })
     if (!apiKey) return NextResponse.json({ error: "Gemini API key is required" }, { status: 400 })
+
+    // Per-language config
+    const langConfig: Record<string, { acceptLang: string; categories: string; promptLang: string }> = {
+      ru: {
+        acceptLang: "ru,en;q=0.5",
+        categories: "Авто | IT и технологии | Здоровье и медицина | Спорт | Кулинария | Животные | Путешествия | Недвижимость | Финансы и инвестиции | Образование | Игры | Мода и красота | Сад и огород | Строительство и ремонт | Охота и рыбалка | Материнство и дети | Бизнес | Музыка | Кино и сериалы | Политика | Наука | Религия | Юридические вопросы | Общение | Другое",
+        promptLang: "русский",
+      },
+      en: {
+        acceptLang: "en,en-US;q=0.9",
+        categories: "Auto | IT & Technology | Health & Medicine | Sports | Cooking | Pets & Animals | Travel | Real Estate | Finance & Investing | Education | Gaming | Fashion & Beauty | Gardening | Construction & Renovation | Hunting & Fishing | Parenting | Business | Music | Movies & TV | Politics | Science | Religion | Legal | General Discussion | Other",
+        promptLang: "английский",
+      },
+      de: {
+        acceptLang: "de,en;q=0.5",
+        categories: "Auto | IT & Technologie | Gesundheit & Medizin | Sport | Kochen | Tiere | Reisen | Immobilien | Finanzen & Investitionen | Bildung | Spiele | Mode & Schönheit | Garten | Bauen & Renovieren | Jagd & Angeln | Elternschaft | Business | Musik | Film & Serien | Politik | Wissenschaft | Religion | Recht | Allgemeine Diskussion | Sonstiges",
+        promptLang: "немецкий",
+      },
+      fr: {
+        acceptLang: "fr,en;q=0.5",
+        categories: "Auto | IT & Technologie | Santé & Médecine | Sport | Cuisine | Animaux | Voyages | Immobilier | Finance & Investissement | Éducation | Jeux | Mode & Beauté | Jardinage | Construction & Rénovation | Chasse & Pêche | Parentalité | Business | Musique | Cinéma & Séries | Politique | Science | Religion | Juridique | Discussion Générale | Autre",
+        promptLang: "французский",
+      },
+      es: {
+        acceptLang: "es,en;q=0.5",
+        categories: "Auto | IT y Tecnología | Salud y Medicina | Deportes | Cocina | Animales | Viajes | Inmobiliaria | Finanzas e Inversiones | Educación | Juegos | Moda y Belleza | Jardinería | Construcción y Renovación | Caza y Pesca | Maternidad | Negocios | Música | Cine y Series | Política | Ciencia | Religión | Legal | Discusión General | Otro",
+        promptLang: "испанский",
+      },
+      it: {
+        acceptLang: "it,en;q=0.5",
+        categories: "Auto | IT e Tecnologia | Salute e Medicina | Sport | Cucina | Animali | Viaggi | Immobiliare | Finanza e Investimenti | Istruzione | Giochi | Moda e Bellezza | Giardinaggio | Costruzione e Ristrutturazione | Caccia e Pesca | Genitorialità | Business | Musica | Cinema e Serie TV | Politica | Scienza | Religione | Legale | Discussione Generale | Altro",
+        promptLang: "итальянский",
+      },
+      cs: {
+        acceptLang: "cs,en;q=0.5",
+        categories: "Auto | IT a Technologie | Zdraví a Medicína | Sport | Vaření | Zvířata | Cestování | Nemovitosti | Finance a Investice | Vzdělávání | Hry | Móda a Krása | Zahradničení | Stavba a Renovace | Lov a Rybaření | Rodičovství | Business | Hudba | Film a Seriály | Politika | Věda | Náboženství | Právo | Obecná Diskuse | Jiné",
+        promptLang: "чешский",
+      },
+      nl: {
+        acceptLang: "nl,en;q=0.5",
+        categories: "Auto | IT & Technologie | Gezondheid & Geneeskunde | Sport | Koken | Dieren | Reizen | Vastgoed | Financiën & Beleggen | Onderwijs | Games | Mode & Beauty | Tuinieren | Bouw & Renovatie | Jacht & Vissen | Ouderschap | Business | Muziek | Film & Series | Politiek | Wetenschap | Religie | Juridisch | Algemene Discussie | Overig",
+        promptLang: "нидерландский",
+      },
+      tr: {
+        acceptLang: "tr,en;q=0.5",
+        categories: "Turizm | Ticaret | Другое",
+        promptLang: "турецкий",
+      },
+    }
+
+    const cfg = langConfig[lang] || langConfig.ru
 
     // Fetch forum HTML
     const controller = new AbortController()
@@ -67,7 +118,7 @@ export async function POST(request: NextRequest) {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "ru,en;q=0.9",
+          "Accept-Language": cfg.acceptLang,
         },
       })
       clearTimeout(timeout)
@@ -94,18 +145,19 @@ export async function POST(request: NextRequest) {
 Данные форума:
 ${meta}
 
-Базовые категории (используй одну из них если подходит, иначе придумай свою — короткую, 1-3 слова на русском):
-Авто | IT и технологии | Здоровье и медицина | Спорт | Кулинария | Животные | Путешествия | Недвижимость | Финансы и инвестиции | Образование | Игры | Мода и красота | Сад и огород | Строительство и ремонт | Охота и рыбалка | Материнство и дети | Бизнес | Музыка | Кино и сериалы | Политика | Наука | Религия | Юридические вопросы | Общение | Другое
+Категории (используй ТОЛЬКО одну из них, ТОЧНО как написано):
+${cfg.categories}
 
 Правила:
-- Если форум подходит под базовую категорию — используй её ТОЧНО как написано выше
-- Если форум нишевый и не подходит ни под одну — придумай короткую категорию (1-3 слова, русский язык)
+- Выбери ОДНУ категорию из списка выше — ту которая лучше всего подходит
+- Если форум не подходит ни под одну конкретную категорию — используй "Другое" (или последнюю категорию из списка)
+- Никогда не придумывай свои категории — только из списка
 - Никогда не возвращай несколько категорий, только одну
-- Категория должна быть конкретной, пригодной для фильтрации
+- Язык форума: ${cfg.promptLang}
 
 Ответь строго в формате JSON (без markdown, без пояснений):
 {
-  "category": "название категории",
+  "category": "название категории ТОЧНО из списка",
   "confidence": "высокая" | "средняя" | "низкая",
   "description": "одно предложение — почему такая категория"
 }`

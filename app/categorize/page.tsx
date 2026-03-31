@@ -9,6 +9,18 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { AlertCircle, Loader2, Download, Tag, Eye, EyeOff, X } from "lucide-react"
 
+const LANGUAGES = [
+  { code: "ru", label: "🇷🇺 RU" },
+  { code: "en", label: "🇬🇧 EN" },
+  { code: "de", label: "🇩🇪 DE" },
+  { code: "fr", label: "🇫🇷 FR" },
+  { code: "es", label: "🇪🇸 ES" },
+  { code: "it", label: "🇮🇹 IT" },
+  { code: "cs", label: "🇨🇿 CS" },
+  { code: "nl", label: "🇳🇱 NL" },
+  { code: "tr", label: "🇹🇷 TR" },
+] as const
+
 interface CategorizeResult {
   category: string
   confidence: "высокая" | "средняя" | "низкая"
@@ -26,6 +38,7 @@ export default function CategorizePage() {
   const [input, setInput] = useState("")
   const [apiKey, setApiKey] = useState("")
   const [showKey, setShowKey] = useState(false)
+  const [lang, setLang] = useState("ru")
   const [results, setResults] = useState<ForumCatResult[]>([])
   const [isChecking, setIsChecking] = useState(false)
   const [activeFilter, setActiveFilter] = useState<string | null>(null)
@@ -53,7 +66,7 @@ export default function CategorizePage() {
         const res = await fetch("/api/categorize-forum", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, apiKey: apiKey.trim() }),
+          body: JSON.stringify({ url, apiKey: apiKey.trim(), lang }),
         })
         const data: CategorizeResult = await res.json()
 
@@ -155,7 +168,7 @@ export default function CategorizePage() {
               </a>
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <div className="relative">
               <Input
                 type={showKey ? "text" : "password"}
@@ -171,6 +184,22 @@ export default function CategorizePage() {
               >
                 {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">Язык / страна форумов</div>
+              <div className="flex flex-wrap gap-2">
+                {LANGUAGES.map(l => (
+                  <button
+                    key={l.code}
+                    onClick={() => setLang(l.code)}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                      lang === l.code ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
+                    }`}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
