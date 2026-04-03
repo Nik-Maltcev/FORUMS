@@ -57,55 +57,21 @@ export async function POST(request: NextRequest) {
     if (!apiKey) return NextResponse.json({ error: "Gemini API key is required" }, { status: 400 })
 
     // Per-language config
-    const langConfig: Record<string, { acceptLang: string; categories: string; promptLang: string }> = {
-      ru: {
-        acceptLang: "ru,en;q=0.5",
-        categories: "Инвестиции | Путешествия/туризм | Торговля | Авто | Психология/отношения | Ставки/казино | Бизнес/карьера | Образование | Политика | Новости | Другое",
-        promptLang: "русский",
-      },
-      en: {
-        acceptLang: "en,en-US;q=0.9",
-        categories: "Investments | Travel/Tourism | Trading | Auto | Psychology/Relationships | Gambling/Casino | Business/Career | Education | Politics | News | Other",
-        promptLang: "английский",
-      },
-      de: {
-        acceptLang: "de,en;q=0.5",
-        categories: "Investitionen | Reisen/Tourismus | Handel | Auto | Psychologie/Beziehungen | Glücksspiel/Casino | Business/Karriere | Bildung | Politik | Nachrichten | Sonstiges",
-        promptLang: "немецкий",
-      },
-      fr: {
-        acceptLang: "fr,en;q=0.5",
-        categories: "Investissements | Voyages/Tourisme | Commerce | Auto | Psychologie/Relations | Paris/Casino | Business/Carrière | Éducation | Politique | Actualités | Autre",
-        promptLang: "французский",
-      },
-      es: {
-        acceptLang: "es,en;q=0.5",
-        categories: "Inversiones | Viajes/Turismo | Comercio | Auto | Psicología/Relaciones | Apuestas/Casino | Negocios/Carrera | Educación | Política | Noticias | Otro",
-        promptLang: "испанский",
-      },
-      it: {
-        acceptLang: "it,en;q=0.5",
-        categories: "Investimenti | Viaggi/Turismo | Commercio | Auto | Psicologia/Relazioni | Scommesse/Casino | Business/Carriera | Istruzione | Politica | Notizie | Altro",
-        promptLang: "итальянский",
-      },
-      cs: {
-        acceptLang: "cs,en;q=0.5",
-        categories: "Investice | Cestování/Turismus | Obchod | Auto | Psychologie/Vztahy | Sázky/Casino | Business/Kariéra | Vzdělávání | Politika | Zprávy | Jiné",
-        promptLang: "чешский",
-      },
-      nl: {
-        acceptLang: "nl,en;q=0.5",
-        categories: "Investeringen | Reizen/Toerisme | Handel | Auto | Psychologie/Relaties | Gokken/Casino | Business/Carrière | Onderwijs | Politiek | Nieuws | Overig",
-        promptLang: "нидерландский",
-      },
-      tr: {
-        acceptLang: "tr,en;q=0.5",
-        categories: "Yatırım | Turizm | Ticaret | Otomobil | Psikoloji/İlişkiler | Bahis/Casino | İş/Kariyer | Eğitim | Politika | Haberler | Diğer",
-        promptLang: "турецкий",
-      },
+    // Accept-Language per country, categories always in Russian
+    const acceptLangs: Record<string, string> = {
+      ru: "ru,en;q=0.5",
+      en: "en,en-US;q=0.9",
+      de: "de,en;q=0.5",
+      fr: "fr,en;q=0.5",
+      es: "es,en;q=0.5",
+      it: "it,en;q=0.5",
+      cs: "cs,en;q=0.5",
+      nl: "nl,en;q=0.5",
+      tr: "tr,en;q=0.5",
     }
 
-    const cfg = langConfig[lang] || langConfig.ru
+    const acceptLang = acceptLangs[lang] || acceptLangs.ru
+    const categories = "Инвестиции | Путешествия/туризм | Торговля | Авто | Психология/отношения | Ставки/казино | Бизнес/карьера | Образование | Политика | Новости | Другое"
 
     // Fetch forum HTML
     const controller = new AbortController()
@@ -118,7 +84,7 @@ export async function POST(request: NextRequest) {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": cfg.acceptLang,
+          "Accept-Language": acceptLang,
         },
       })
       clearTimeout(timeout)
@@ -146,14 +112,14 @@ export async function POST(request: NextRequest) {
 ${meta}
 
 Категории (используй ТОЛЬКО одну из них, ТОЧНО как написано):
-${cfg.categories}
+${categories}
 
 Правила:
 - Выбери ОДНУ категорию из списка выше — ту которая лучше всего подходит
-- Если форум не подходит ни под одну конкретную категорию — используй последнюю категорию из списка (Другое/Other/Diğer и т.д.)
+- Если форум не подходит ни под одну конкретную категорию — используй "Другое"
 - Никогда не придумывай свои категории — только из списка
 - Никогда не возвращай несколько категорий, только одну
-- Язык форума: ${cfg.promptLang}
+- Отвечай ТОЛЬКО на русском языке
 
 Ответь строго в формате JSON (без markdown, без пояснений):
 {
@@ -162,21 +128,30 @@ ${cfg.categories}
   "description": "одно предложение — почему такая категория"
 }`
 
-    const kimiRes = await fetch("https://api.moonshot.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "kimi-k2-0905-preview",
-        messages: [
-          { role: "user", content: prompt },
-        ],
-        thinking: { type: "disabled" },
-        max_tokens: 256,
-      }),
-    })
+    // Call Kimi (OpenAI-compatible API) with retry on 429
+    const callKimi = async (attempt = 0): Promise<Response> => {
+      const res = await fetch("https://api.moonshot.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "kimi-k2-0905-preview",
+          messages: [{ role: "user", content: prompt }],
+          thinking: { type: "disabled" },
+          max_tokens: 256,
+        }),
+      })
+      if (res.status === 429 && attempt < 5) {
+        const wait = Math.max(2, attempt + 1) * 1000
+        await new Promise(r => setTimeout(r, wait))
+        return callKimi(attempt + 1)
+      }
+      return res
+    }
+
+    const kimiRes = await callKimi()
 
     if (!kimiRes.ok) {
       const err = await kimiRes.text()

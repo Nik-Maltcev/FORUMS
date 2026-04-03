@@ -79,9 +79,9 @@ export default function CategorizePage() {
     setActiveFilter(null)
     setResults(urls.map((url) => ({ url, status: "pending" })))
 
-    // Process 5 forums in parallel
-    for (let i = 0; i < urls.length; i += 5) {
-      const batch = urls.slice(i, i + 5)
+    // Process 2 forums in parallel (Kimi limit: 3 concurrent)
+    for (let i = 0; i < urls.length; i += 2) {
+      const batch = urls.slice(i, i + 2)
       await Promise.allSettled(batch.map((url, j) => checkOne(url, i + j)))
     }
 
