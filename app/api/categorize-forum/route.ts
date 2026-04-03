@@ -32,10 +32,22 @@ function extractPageMeta(html: string): string {
 
   // Extract forum section/category names
   const sectionNames: string[] = []
-  const sectionPattern = /class="[^"]*(?:forum[-_]?title|board[-_]?name|category[-_]?name|node[-_]?title|forumtitle)[^"]*"[^>]*>[\s\S]{0,5}<(?:a|span|div)[^>]*>([^<]{2,80})</gi
-  while ((m = sectionPattern.exec(html)) !== null && sectionNames.length < 15) {
-    const text = m[1].trim()
-    if (text) sectionNames.push(text)
+  const sectionPatterns = [
+    // Container with class -> child link/span
+    /class="[^"]*(?:forum[-_]?title|board[-_]?name|category[-_]?name|node[-_]?title|forumtitle)[^"]*"[^>]*>[\s\S]{0,5}<(?:a|span|div)[^>]*>([^<]{2,80})/gi,
+    // phpBB: forumtitle class directly on <a>
+    /<a[^>]*class="[^"]*forumtitle[^"]*"[^>]*>([^<]{2,80})<\/a>/gi,
+    // XenForo: node-title -> <a>
+    /class="[^"]*node-title[^"]*"[^>]*>\s*<a[^>]*>([^<]{2,80})<\/a>/gi,
+    // IPB: ipsDataItem_title -> <a>
+    /ipsDataItem_title[^>]*>\s*<a[^>]*>([^<]{2,80})<\/a>/gi,
+  ]
+  for (const pattern of sectionPatterns) {
+    let sm: RegExpExecArray | null
+    while ((sm = pattern.exec(html)) !== null && sectionNames.length < 20) {
+      const text = sm[1].replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim()
+      if (text && !sectionNames.includes(text)) sectionNames.push(text)
+    }
   }
 
   const parts = [
