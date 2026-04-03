@@ -50,6 +50,27 @@ export default function CategorizePage() {
       .filter((u) => u.length > 0)
       .map((u) => (u.startsWith("http") ? u : `https://${u}`))
 
+  const checkOne = async (url: string, i: number) => {
+    setResults((prev) => prev.map((r, idx) => (idx === i ? { ...r, status: "checking" } : r)))
+    try {
+      const res = await fetch("/api/categorize-forum", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, apiKey: apiKey.trim(), lang }),
+      })
+      const data: CategorizeResult = await res.json()
+      if (data.error) {
+        setResults((prev) => prev.map((r, idx) => (idx === i ? { ...r, status: "error", result: data } : r)))
+      } else {
+        setResults((prev) => prev.map((r, idx) => (idx === i ? { ...r, status: "done", result: data } : r)))
+      }
+    } catch {
+      setResults((prev) => prev.map((r, idx) =>
+        idx === i ? { ...r, status: "error", result: { category: "", confidence: "низкая", description: "", error: "Не удалось выполнить запрос" } } : r
+      ))
+    }
+  }
+
   const handleCheck = async () => {
     const urls = parseUrls(input)
     if (urls.length === 0 || !apiKey.trim()) return
@@ -58,36 +79,10 @@ export default function CategorizePage() {
     setActiveFilter(null)
     setResults(urls.map((url) => ({ url, status: "pending" })))
 
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i]
-      setResults((prev) => prev.map((r, idx) => (idx === i ? { ...r, status: "checking" } : r)))
-
-      try {
-        const res = await fetch("/api/categorize-forum", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, apiKey: apiKey.trim(), lang }),
-        })
-        const data: CategorizeResult = await res.json()
-
-        if (data.error) {
-          setResults((prev) =>
-            prev.map((r, idx) => (idx === i ? { ...r, status: "error", result: data } : r))
-          )
-        } else {
-          setResults((prev) =>
-            prev.map((r, idx) => (idx === i ? { ...r, status: "done", result: data } : r))
-          )
-        }
-      } catch {
-        setResults((prev) =>
-          prev.map((r, idx) =>
-            idx === i
-              ? { ...r, status: "error", result: { category: "", confidence: "низкая", description: "", error: "Не удалось выполнить запрос" } }
-              : r
-          )
-        )
-      }
+    // Process 5 forums in parallel
+    for (let i = 0; i < urls.length; i += 5) {
+      const batch = urls.slice(i, i + 5)
+      await Promise.allSettled(batch.map((url, j) => checkOne(url, i + j)))
     }
 
     setIsChecking(false)
@@ -155,16 +150,16 @@ export default function CategorizePage() {
       <div className="mx-auto max-w-4xl space-y-8">
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">Категоризация форумов</h1>
-          <p className="text-muted-foreground">Определение тематики форумов с помощью Gemini AI</p>
+          <p className="text-muted-foreground">Определение тематики форумов с помощью Kimi K2.5</p>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Настройки</CardTitle>
             <CardDescription>
-              Получите бесплатный API ключ на{" "}
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                aistudio.google.com
+              Получите API ключ на{" "}
+              <a href="https://platform.moonshot.cn" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                platform.moonshot.cn
               </a>
             </CardDescription>
           </CardHeader>
@@ -172,7 +167,7 @@ export default function CategorizePage() {
             <div className="relative">
               <Input
                 type={showKey ? "text" : "password"}
-                placeholder="Gemini API Key"
+                placeholder="Kimi API Key (MOONSHOT_API_KEY)"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 className="pr-10 font-mono text-sm"

@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       } as CategorizeResult)
     }
 
-    // Call Gemini Flash
+    // Call Kimi K2.5 (OpenAI-compatible API)
     const prompt = `Ты эксперт по классификации интернет-форумов. На основе данных ниже определи тематическую категорию форума.
 
 Данные форума:
@@ -150,7 +150,7 @@ ${cfg.categories}
 
 Правила:
 - Выбери ОДНУ категорию из списка выше — ту которая лучше всего подходит
-- Если форум не подходит ни под одну конкретную категорию — используй "Другое" (или последнюю категорию из списка)
+- Если форум не подходит ни под одну конкретную категорию — используй последнюю категорию из списка (Другое/Other/Diğer и т.д.)
 - Никогда не придумывай свои категории — только из списка
 - Никогда не возвращай несколько категорий, только одну
 - Язык форума: ${cfg.promptLang}
@@ -162,34 +162,36 @@ ${cfg.categories}
   "description": "одно предложение — почему такая категория"
 }`
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 256, thinkingConfig: { thinkingBudget: 0 } },
-        }),
-      }
-    )
+    const kimiRes = await fetch("https://api.moonshot.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "kimi-k2.5",
+        messages: [
+          { role: "user", content: prompt },
+        ],
+        thinking: { type: "disabled" },
+        max_tokens: 256,
+      }),
+    })
 
-    if (!geminiRes.ok) {
-      const err = await geminiRes.text()
-      return NextResponse.json({ error: `Gemini error: ${geminiRes.status} ${err.slice(0, 200)}` }, { status: 500 })
+    if (!kimiRes.ok) {
+      const err = await kimiRes.text()
+      return NextResponse.json({ error: `Kimi error: ${kimiRes.status} ${err.slice(0, 200)}` }, { status: 500 })
     }
 
-    const geminiData = await geminiRes.json()
-    // Collect all text parts (thinking models may split into multiple parts)
-    const parts = geminiData?.candidates?.[0]?.content?.parts ?? []
-    const text = parts.map((p: { text?: string }) => p.text ?? "").join("")
+    const kimiData = await kimiRes.json()
+    const text = kimiData?.choices?.[0]?.message?.content ?? ""
 
     // Strip markdown code fences and extract JSON object
     const cleaned = text.replace(/```(?:json)?/gi, "").replace(/```/g, "")
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return NextResponse.json(
-        { error: `Не удалось разобрать ответ Gemini: ${text.slice(0, 200)}` },
+        { error: `Не удалось разобрать ответ Kimi: ${text.slice(0, 200)}` },
         { status: 500 }
       )
     }
