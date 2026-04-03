@@ -169,7 +169,7 @@ ${cfg.categories}
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "kimi-k2.5",
+        model: "kimi-k2-0905-preview",
         messages: [
           { role: "user", content: prompt },
         ],
